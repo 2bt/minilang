@@ -6,7 +6,6 @@
 
 
 enum {
-	LEX_EOF = EOF,
 
 	LEX_IF = 0,
 	LEX_ELSE,
@@ -15,14 +14,18 @@ enum {
 	LEX_WHILE,
 	LEX_BREAK,
 	LEX_RETURN,
+	LEX_KEYWORD_COUNT,
 
 	LEX_CHAR,
 	LEX_STRING,
 	LEX_NUMBER,
 	LEX_IDENT,
+	LEX_EOF,
+
+	LEX_SIZE
 };
 
-const char* keywords[] = { "if", "else", "elif", "end", "while", "break", "return", NULL };
+const char* keywords[] = { "if", "else", "elif", "end", "while", "break", "return", NULL, NULL, NULL, NULL, "identifier", "EOF" };
 
 
 //	scanner
@@ -129,15 +132,13 @@ int scan() {
 		} while(isalnum(look_char) || look_char == '_');
 		token[i] = '\0';
 		// check for keywords
-		i = 0;
-		while(keywords[i]) {
+		for(i = 0; i < LEX_KEYWORD_COUNT; i++) {
 			if(strcmp(token, keywords[i]) == 0) return i;
-			i++;
 		}
 		return LEX_IDENT;
 	}
 
-	if(look_char != LEX_EOF) error("unknown character");
+	if(look_char != EOF) error("unknown character");
 	return LEX_EOF;
 }
 
@@ -156,7 +157,11 @@ void init_scanner() {
 
 
 void expect(int lexeme) {
-
+	if(look_lexeme != lexeme) {
+		if(lexeme < LEX_SIZE) error("%s expected", keywords[lexeme]);
+		else error("%c expected", lexeme);
+	}
+	read_lexeme();
 }
 
 
@@ -164,6 +169,11 @@ void minilang() {
 	fprintf(dst_file, "\t.intel_syntax noprefix\n");
 	fprintf(dst_file, "\t.text\n");
 
+	while(look_lexeme == LEX_IDENT) {
+		read_lexeme();
+
+	}
+	expect(LEX_EOF);
 }
 
 
