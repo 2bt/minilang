@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
 
@@ -35,11 +36,17 @@ int			no_whitespace;
 int			line_number;
 int			cursor_pos;
 
-FILE*	src_file;
+FILE*		src_file;
+FILE*		dst_file;
 
 
-void error(char* msg) {
-	printf("%d:%d: error: %s\n", line_number, cursor_pos, msg);
+void error(char* msg, ...) {
+	fprintf(stderr, "%d:%d: error: ", line_number, cursor_pos);
+	va_list args;
+	va_start(args, msg);
+	vfprintf(stderr, msg, args);
+	va_end(args);
+	fprintf(stderr, "\n");
 	exit(1);
 }
 
@@ -121,7 +128,7 @@ int scan() {
 			if(i > 30) error("ident too long");
 		} while(isalnum(look_char) || look_char == '_');
 		token[i] = '\0';
-
+		// check for keywords
 		i = 0;
 		while(keywords[i]) {
 			if(strcmp(token, keywords[i]) == 0) return i;
@@ -148,21 +155,47 @@ void init_scanner() {
 }
 
 
+void expect(int lexeme) {
+
+}
+
+
+void minilang() {
+	fprintf(dst_file, "\t.intel_syntax noprefix\n");
+	fprintf(dst_file, "\t.text\n");
+
+}
+
+
+void cleanup() {
+	if(src_file) fclose(src_file);
+	if(dst_file && dst_file != stdin) fclose(dst_file);
+}
+
+
 int main(int argc, char** argv) {
 
-	if(argc != 2) {
-		printf("usuage: %s file\n", argv[0]);
+
+	if(argc < 2 || argc > 3) {
+		printf("usuage: %s <source> [output]\n", argv[0]);
 		exit(0);
 	}
 
 	src_file = fopen(argv[1], "r");
 	if(!src_file) error("opening source file failed");
 
+	if(argc == 3) {
+		dst_file = fopen(argv[2], "w");
+		if(!src_file) error("opening output file failed");
+	}
+	else dst_file = stdout;
+
+	atexit(cleanup);
+
+
 	init_scanner();
+	minilang();
 
-
-
-	fclose(src_file);
 
 	return 0;
 }
