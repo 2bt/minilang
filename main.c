@@ -18,6 +18,9 @@ enum {
 int		look_char;
 int		look_lexeme;
 
+long long	number;
+
+
 int		line_number;
 int		cursor_pos;
 
@@ -32,13 +35,15 @@ void error(char* msg) {
 }
 
 
-void read_char() {
+int read_char() {
+	int c = look_char;
 	look_char = fgetc(src_file);
 	cursor_pos++;
 	if(look_char == '\n') {
 		line_number++;
 		cursor_pos = 1;
 	}
+	return c;
 }
 
 
@@ -56,22 +61,19 @@ int scan() {
 
 	// ignore comment
 	if(look_char == '/') {
-		read_char();
-		if(look_char != '/') return '/';
+		if(read_char() != '/') return '/';
 		while(look_char != '\n') read_char();
 		if(no_whitespace) {
 			no_whitespace = 0;
 			return ';';
 		}
-		while(isspace(look_char)) read_char();
+		while(isspace(read_char())) {}
 	}
 
 	// one character token
-	if(strchr("-+*%&|^~!=<>;:()#$@", look_char)) {
+	if(strchr("-+*%&|^~!=<>;:()", look_char)) {
 		no_whitespace = 1;
-		int c = look_char;
-		read_char();
-		return c;
+		return read_char();
 	}
 
 	// TODO: char
@@ -81,23 +83,27 @@ int scan() {
 		no_whitespace = 1;
 		int i = 0;
 		do {
-			if(look_char == '\\') {
-				text[i] = look_char;
-				i++;
-				read_char();
-			}
-			text[i] = look_char;
-			i++;
-			read_char();
+			if(look_char == '\\') text[i++] = read_char();
+			text[i++] = read_char();
+			if(i > 1020) error("string too long");
 		} while(look_char != '"');
-		text[i] = look_char;
-		text[i + 1] = '\0';
-
-
+		text[i++] = read_char();
+		text[i] = '\0';
 		return LEX_STRING;
 	}
 
-
+	if(isdigit(look_char)) {
+		no_whitespace = 1;
+		int i = 0;
+		do {
+			text[i++] = read_char();
+			if(i > 20) error("number too long");
+		} while(isdigit(look_char));
+		text[i] = '\0';
+		puts(text);
+		number = atoll(text);
+		return LEX_NUMBER;
+	}
 
 
 }
@@ -124,7 +130,7 @@ int main(int argc, char** argv) {
 	}
 
 	src_file = fopen(argv[1], "r");
-	if(!src_file) error("Could not open source file");
+	if(!src_file) error("opening source file failed");
 
 	init_scanner();
 
