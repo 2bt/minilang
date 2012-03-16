@@ -5,26 +5,35 @@
 
 
 enum {
-	LEX_STRING = 256,
-	LEX_NUMBER,
-	LEX_IF,
+	LEX_EOF = EOF,
+
+	LEX_IF = 0,
 	LEX_ELSE,
 	LEX_ELIF,
 	LEX_END,
+	LEX_WHILE,
+	LEX_BREAK,
+	LEX_RETURN,
 
+	LEX_CHAR,
+	LEX_STRING,
+	LEX_NUMBER,
+	LEX_IDENT,
 };
 
-//	scanner
-int		look_char;
-int		look_lexeme;
+const char* keywords[] = { "if", "else", "elif", "end", "while", "break", "return", NULL };
 
+
+//	scanner
+int			look_char;
+int			look_lexeme;
+
+char		token[1024];
 long long	number;
 
-
-int		line_number;
-int		cursor_pos;
-
-int		no_whitespace;
+int			no_whitespace;
+int			line_number;
+int			cursor_pos;
 
 FILE*	src_file;
 
@@ -48,7 +57,6 @@ int read_char() {
 
 
 int scan() {
-	static char	text[1024];
 
 	// skip whitespace
 	while(isspace(look_char)) {
@@ -83,29 +91,47 @@ int scan() {
 		no_whitespace = 1;
 		int i = 0;
 		do {
-			if(look_char == '\\') text[i++] = read_char();
-			text[i++] = read_char();
+			if(look_char == '\\') token[i++] = read_char();
+			token[i++] = read_char();
 			if(i > 1020) error("string too long");
 		} while(look_char != '"');
-		text[i++] = read_char();
-		text[i] = '\0';
+		token[i++] = read_char();
+		token[i] = '\0';
 		return LEX_STRING;
 	}
 
+	// number
 	if(isdigit(look_char)) {
 		no_whitespace = 1;
 		int i = 0;
 		do {
-			text[i++] = read_char();
+			token[i++] = read_char();
 			if(i > 20) error("number too long");
 		} while(isdigit(look_char));
-		text[i] = '\0';
-		puts(text);
-		number = atoll(text);
+		token[i] = '\0';
+		number = atoll(token);
 		return LEX_NUMBER;
 	}
 
+	if(isalpha(look_char) || look_char == '_') {
+		no_whitespace = 1;
+		int i = 0;
+		do {
+			token[i++] = read_char();
+			if(i > 30) error("ident too long");
+		} while(isalnum(look_char) || look_char == '_');
+		token[i] = '\0';
 
+		i = 0;
+		while(keywords[i]) {
+			if(strcmp(token, keywords[i]) == 0) return i;
+			i++;
+		}
+		return LEX_IDENT;
+	}
+
+	if(look_char != LEX_EOF) error("unknown character");
+	return LEX_EOF;
 }
 
 
@@ -133,7 +159,6 @@ int main(int argc, char** argv) {
 	if(!src_file) error("opening source file failed");
 
 	init_scanner();
-
 
 
 
