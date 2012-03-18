@@ -26,6 +26,7 @@ enum {
 
 const char* keywords[] = { "if", "else", "elif", "end", "while", "break",
 	"return", NULL, NULL, NULL, "number", "identifier" };
+const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 
 
 //	scanner
@@ -35,7 +36,6 @@ int			lexeme;
 char		token[1024];
 long long	number;
 
-int			no_whitespace;
 int			line_number;
 int			cursor_pos;
 
@@ -54,6 +54,13 @@ void error(char* msg, ...) {
 	exit(1);
 }
 
+void output(char* msg, ...) {
+	va_list args;
+	va_start(args, msg);
+	vfprintf(dst_file, msg, args);
+	va_end(args);
+}
+
 
 int read_char() {
 	int c = character;
@@ -70,28 +77,18 @@ int read_char() {
 int scan() {
 
 	// skip whitespace
-	while(isspace(character)) {
-		if(character == '\n' && no_whitespace) {
-			no_whitespace = 0;
-			return ';';
-		}
-		read_char();
-	}
+	while(isspace(character)) read_char();
 
 	// ignore comment
 	if(character == '/') {
-		if(read_char() != '/') return '/';
-		while(character != '\n') read_char();
-		if(no_whitespace) {
-			no_whitespace = 0;
-			return ';';
-		}
-		while(isspace(read_char())) {}
+		read_char();
+		if(character != '/') return '/';
+		while(read_char() != '\n') {}
+		while(isspace(character)) read_char();
 	}
 
 	// one character token
-	if(strchr("-+*%&|^~!=<>;:()", character)) {
-		no_whitespace = 1;
+	if(strchr("-+*%&|^~!=<>;:(),", character)) {
 		return read_char();
 	}
 
@@ -99,7 +96,6 @@ int scan() {
 
 	// string
 	if(character == '"') {
-		no_whitespace = 1;
 		int i = 0;
 		do {
 			if(character == '\\') token[i++] = read_char();
@@ -113,7 +109,6 @@ int scan() {
 
 	// number
 	if(isdigit(character)) {
-		no_whitespace = 1;
 		int i = 0;
 		do {
 			token[i++] = read_char();
@@ -125,14 +120,12 @@ int scan() {
 	}
 
 	if(isalpha(character) || character == '_') {
-		no_whitespace = 1;
 		int i = 0;
 		do {
 			token[i++] = read_char();
 			if(i > 30) error("ident too long");
 		} while(isalnum(character) || character == '_');
 		token[i] = '\0';
-
 
 		// check for keywords
 		for(i = 0; i < LEX_KEYWORD_COUNT; i++) {
@@ -148,9 +141,9 @@ int scan() {
 
 int read_lexeme() {
 	int l = lexeme;
-	if(l < LEX_SIZE) printf("%s ", keywords[l]);
-	else printf("%c ", l);
 
+//	if(l < LEX_SIZE) printf("%s ", keywords[l]);
+//	else printf("%c ", l);
 
 	lexeme = scan();
 	return l;
@@ -173,37 +166,82 @@ void expect(int l) {
 }
 
 
+struct Local {
+	char	name[1024];
+	int		offset;
+
+};
 
 
+int				local_count;
+struct Local	locals[1024];
+int				frame;
+int				param_count;
 
 
-int		frame;
-int		param;
-char	func_name[1024];
-
-void param_decl() {
-
-
+void add_local(char* name, int offset) {
+	for(int i = 0; i < 1024; i++) {
+		if(i == local_count) {
+			strcpy(name, locals[i].name);
+			locals[i].offset = offset;
+			local_count++;
+			return;
+		}
+		if(strcmp(name, locals[i].name) == 0) error("multiple declaration");
+	}
+	error("too many locals");
 }
 
+
+void param_decl() {
+	expect(LEX_IDENT);
+	frame += 8;
+	param_count++;
+
+	add_local(token, frame);
+}
+
+
 void minilang() {
-	fprintf(dst_file, "\t.intel_syntax noprefix\n");
-	fprintf(dst_file, "\t.text\n");
+	output("\t.intel_syntax noprefix\n");
+	output("\t.text\n");
 
 	while(lexeme != LEX_EOF) {
 		expect(LEX_IDENT);
 
+
 		// only functions for now
-		strcpy(func_name, token);
+		output("\t.globl %s\n", token);
+		output("%s:\n", token);
+		output("\tpush rbp\n");
+		output("\tmov rbp, rsp\n");
+
+		frame = 0;
+		param_count = 0;
+		local_count = 0;
+
 		expect('(');
-		frame = 8;
-		param = 0;
 		if(lexeme == LEX_IDENT) {
 			param_decl();
-			while(read_lexeme() == ',') param_decl();
+			while(lexeme == ',') {
+				read_lexeme();
+				param_decl();
+			}
 		}
 		expect(')');
+
+		if(frame > 0) output("\tsub rsp, %d\n", frame);
+		for(int i = 0; i < param_count; i++) {
+			output("\tmov [rbp - %d], %s\n", i * 8 + 8, call_regs[i]);
+		}
+
 		// function body here...
+
+
+
+		expect(LEX_END);
+		output("\tleave\n");
+		output("\tret\n");
 	}
 }
 
@@ -215,7 +253,6 @@ void cleanup() {
 
 
 int main(int argc, char** argv) {
-
 
 	if(argc < 2 || argc > 3) {
 		printf("usuage: %s <source> [output]\n", argv[0]);
