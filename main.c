@@ -166,17 +166,31 @@ void expect(int l) {
 }
 
 
-struct Local {
+// symbol table
+typedef struct {
 	char	name[1024];
 	int		offset;
+} Variable;
 
-};
+Variable	locals[1024];
+int			local_count;
+
+int			frame;
+int			param_count;
 
 
-int				local_count;
-struct Local	locals[1024];
-int				frame;
-int				param_count;
+Variable* lookup(char* name, Variable* table, int size) {
+	for(int i = 0; i < size; i++) {
+		if(strcmp(name, table[i].name) == 0) return &table[i];
+	}
+	error("variable not found");
+	return NULL;
+}
+
+
+Variable* lookup_local(char* name) {
+	return lookup(name, locals, local_count);
+}
 
 
 void add_local(char* name, int offset) {
@@ -232,7 +246,7 @@ void minilang() {
 
 		if(frame > 0) output("\tsub rsp, %d\n", frame);
 		for(int i = 0; i < param_count; i++) {
-			output("\tmov [rbp - %d], %s\n", i * 8 + 8, call_regs[i]);
+			output("\tmov QWORD PTR [rbp - %d], %s\n", i * 8 + 8, call_regs[i]);
 		}
 
 		// function body here...
