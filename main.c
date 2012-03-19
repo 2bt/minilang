@@ -123,7 +123,7 @@ int scan() {
 		int i = 0;
 		do {
 			token[i++] = read_char();
-			if(i > 30) error("identifier too long");
+			if(i > 62) error("identifier too long");
 		} while(isalnum(character) || character == '_');
 		token[i] = '\0';
 
@@ -140,8 +140,6 @@ int scan() {
 
 
 void read_lexeme() {
-//	if(l < LEX_SIZE) printf("%s ", keywords[lexeme]);
-//	else printf("%c ", lexeme);
 	lexeme = scan();
 }
 
@@ -164,7 +162,7 @@ void expect(int l) {
 
 // symbol table
 typedef struct {
-	char	name[1024];
+	char	name[64];
 	int		offset;
 } Variable;
 
@@ -261,6 +259,7 @@ void pop() {
 int is_expr_beginning() {
 	static const int lexemes[] = { '-', '!', '(',
 		LEX_NUMBER, LEX_STRING, LEX_IDENT };
+
 	for(int i = 0; i < sizeof(lexemes) / sizeof(int); i++)
 		if(lexeme == lexemes[i]) return 1;
 	return 0;
@@ -304,7 +303,7 @@ void expression() {
 
 		read_lexeme();
 		if(lexeme == '(') {
-			char name[256];
+			char name[64];
 			strcpy(name, token);
 
 			for(int i = stack_size - 1; i >= 0; i--) {
