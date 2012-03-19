@@ -13,35 +13,32 @@ enum {
 	LEX_END,
 	LEX_WHILE,
 	LEX_BREAK,
+	LEX_CONTINUE,
 	LEX_RETURN,
 	LEX_KEYWORD_COUNT,
-
 	LEX_CHAR,
 	LEX_STRING,
 	LEX_NUMBER,
 	LEX_IDENT,
-
 	LEX_SIZE
 };
 
 const char* keywords[] = { "if", "else", "elif", "end", "while", "break",
-	"return", NULL, NULL, NULL, "number", "identifier" };
+	"continue", "return", NULL, NULL, NULL, "number", "identifier" };
 const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 
 
 //	scanner
 int			character;
 int			lexeme;
-
 char		token[1024];
 long long	number;
-
+int			neg_number;
 int			line_number;
 int			cursor_pos;
 
 FILE*		src_file;
 FILE*		dst_file;
-
 
 
 void error(char* msg, ...) {
@@ -53,6 +50,7 @@ void error(char* msg, ...) {
 	fprintf(stderr, "\n");
 	exit(1);
 }
+
 
 void output(char* msg, ...) {
 	va_list args;
@@ -76,7 +74,6 @@ int read_char() {
 
 int scan() {
 
-	// skip whitespace
 	while(isspace(character)) read_char();
 
 	// ignore comment
@@ -89,7 +86,10 @@ int scan() {
 
 	// one character token
 	if(strchr("-+*%&|^~!=<>;:(),", character)) {
-		return read_char();
+		int c = character;
+		read_char();
+		neg_number = (c == '-' && isdigit(character));
+		return c;
 	}
 
 	// TODO: char
@@ -123,7 +123,7 @@ int scan() {
 		int i = 0;
 		do {
 			token[i++] = read_char();
-			if(i > 30) error("ident too long");
+			if(i > 30) error("identifier too long");
 		} while(isalnum(character) || character == '_');
 		token[i] = '\0';
 
@@ -139,14 +139,10 @@ int scan() {
 }
 
 
-int read_lexeme() {
-	int l = lexeme;
-
-//	if(l < LEX_SIZE) printf("%s ", keywords[l]);
-//	else printf("%c ", l);
-
+void read_lexeme() {
+//	if(l < LEX_SIZE) printf("%s ", keywords[lexeme]);
+//	else printf("%c ", lexeme);
 	lexeme = scan();
-	return l;
 }
 
 
@@ -179,40 +175,169 @@ int			frame;
 int			param_count;
 
 
-Variable* lookup(char* name, Variable* table, int size) {
+const char*	regs[] = { "r8", "r9", "r11", "rax" };
+enum {
+			cache_size = sizeof(regs) / sizeof(char*)
+};
+int			cache[cache_size];
+int			stack_size;
+
+
+void init_cache() {
+	for(int i = 0; i < cache_size; i++) cache[i] = i;
+	stack_size = 0;
+}
+
+
+Variable* lookup_variable(char* name, Variable* table, int size) {
 	for(int i = 0; i < size; i++) {
 		if(strcmp(name, table[i].name) == 0) return &table[i];
 	}
-	error("variable not found");
+//	error("variable not found");
 	return NULL;
 }
 
 
 Variable* lookup_local(char* name) {
-	return lookup(name, locals, local_count);
+	return lookup_variable(name, locals, local_count);
+}
+
+
+void add_variable(char* name, int offset, Variable* table, int* size) {
+	for(int i = 0; i < 1024; i++) {
+		if(i == *size) {
+			strcpy(name, table[i].name);
+			table[i].offset = offset;
+			(*size)++;
+			return;
+		}
+		if(strcmp(name, table[i].name) == 0) error("multiple declarations");
+	}
+	error("too many variables");
 }
 
 
 void add_local(char* name, int offset) {
-	for(int i = 0; i < 1024; i++) {
-		if(i == local_count) {
-			strcpy(name, locals[i].name);
-			locals[i].offset = offset;
-			local_count++;
-			return;
-		}
-		if(strcmp(name, locals[i].name) == 0) error("multiple declaration");
-	}
-	error("too many locals");
+	add_variable(name, offset, locals, &local_count);
 }
 
 
 void param_decl() {
 	expect(LEX_IDENT);
 	frame += 8;
-	param_count++;
-
 	add_local(token, frame);
+}
+
+
+void push() {
+	int i = cache_size - 1;
+	int tmp = cache[i];
+	if(stack_size >= cache_size) output("\tpush %s\n", regs[tmp]);
+	while(i > 0) {
+		cache[i] = cache[i - 1];
+		i--;
+	}
+	cache[0] = tmp;
+	stack_size++;
+}
+
+
+void pop() {
+	stack_size--;
+	if(stack_size == 0) init_cache();
+	else {
+		int i = 0;
+		int tmp = cache[0];
+		while(i < cache_size - 1) {
+			cache[i] = cache[i + 1];
+			i++;
+		}
+		cache[i] = tmp;
+		if(stack_size >= cache_size) output("\tpop %s\n", regs[i]);
+	}
+}
+
+
+int expression() {
+	if(lexeme == '!') {
+		read_lexeme();
+		expression();
+		output("\ttest %s, %s\n", regs[cache[0]], regs[cache[0]]);
+		output("\tsetz cl\n");
+		output("\tmovzx %s, cl\n", regs[cache[0]]);
+		return 1;
+	}
+
+	if(lexeme == '-') {
+		if(!neg_number) {
+			read_lexeme();
+			expression();
+			output("\tneg %s\n", regs[cache[0]]);
+			return 1;
+		}
+		read_lexeme();
+		expect(LEX_NUMBER);
+		push();
+		output("\tmov %s, %ld\n", regs[cache[0]], -number);
+	}
+	else if(lexeme == LEX_NUMBER) {
+		read_lexeme();
+		push();
+		output("\tmov %s, %ld\n", regs[cache[0]], number);
+	}
+	else if(lexeme == '(') {
+		read_lexeme();
+		expression();
+		expect(')');
+	}
+	else if(lexeme == LEX_IDENT) {
+
+
+	}
+	else return 0;
+
+
+	// TODO: check for opperand
+
+
+	return 1;
+}
+
+
+int statement() {
+	if(lexeme == LEX_IF) {
+
+
+	}
+	else if(lexeme == LEX_WHILE) {
+
+
+	}
+	else if(lexeme == LEX_BREAK) {
+
+
+	}
+	else if(lexeme == LEX_CONTINUE) {
+
+
+	}
+	else if(lexeme == LEX_RETURN) {
+		read_lexeme();
+		if(expression()) {
+			if(strcmp(regs[cache[0]], "rax") != 0)
+				output("\tmov rax, %s\n", regs[cache[0]]);
+		}
+		output("\tleave\n");
+		output("\tret\n");
+		expect(';');
+	}
+	else return expression();
+	return 1;
+}
+
+
+void statement_list() {
+	while(statement()) {}
 }
 
 
@@ -231,14 +356,17 @@ void minilang() {
 		output("\tmov rbp, rsp\n");
 
 		frame = 0;
-		param_count = 0;
 		local_count = 0;
 
+		int param_count = 0;
 		expect('(');
 		if(lexeme == LEX_IDENT) {
+			param_count++;
 			param_decl();
 			while(lexeme == ',') {
 				read_lexeme();
+				param_count++;
+				if(param_count > 6) error("too many arguments");
 				param_decl();
 			}
 		}
@@ -249,11 +377,10 @@ void minilang() {
 			output("\tmov QWORD PTR [rbp - %d], %s\n", i * 8 + 8, call_regs[i]);
 		}
 
-		// function body here...
-
-
-
+		init_cache();
+		statement_list();
 		expect(LEX_END);
+
 		output("\tleave\n");
 		output("\tret\n");
 	}
