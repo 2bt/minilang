@@ -174,6 +174,7 @@ int			local_count;
 int			frame;
 int			param_count;
 
+int			label;
 
 const char*	regs[] = { "r8", "r9", "r11", "rax" };
 enum {
@@ -294,7 +295,7 @@ int expression() {
 
 		read_lexeme();
 		if(lexeme == '(') {
-			char name[1024];
+			char name[256];
 			strcpy(name, token);
 
 
@@ -308,6 +309,16 @@ int expression() {
 			push();
 			output("\tmov %s, QWORD PTR [rbp - %d]\n", regs[cache[0]], v->offset);
 		}
+	}
+	else if(lexeme == LEX_STRING) {
+		output("\t.section .rodata\n");
+		output("LC%d:\n", label);
+		output("\t.string %s\n", token);
+		output("\t.text\n");
+		push();
+		output("\tmov %s, OFFSET LC%d\n", regs[cache[0]], label);
+		label++;
+		read_lexeme();
 	}
 	else return 0;
 
@@ -428,6 +439,9 @@ int main(int argc, char** argv) {
 
 
 	init_scanner();
+
+	label = 0;
+
 	minilang();
 
 
