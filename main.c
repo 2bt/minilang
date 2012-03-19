@@ -193,7 +193,6 @@ Variable* lookup_variable(char* name, Variable* table, int size) {
 	for(int i = 0; i < size; i++) {
 		if(strcmp(name, table[i].name) == 0) return &table[i];
 	}
-//	error("variable not found");
 	return NULL;
 }
 
@@ -203,12 +202,11 @@ Variable* lookup_local(char* name) {
 }
 
 
-void add_variable(char* name, int offset, Variable* table, int* size) {
+void add_variable(char* name, int offset, Variable* table, int size) {
 	for(int i = 0; i < 1024; i++) {
-		if(i == *size) {
-			strcpy(name, table[i].name);
+		if(i == size) {
+			strcpy(table[i].name, name);
 			table[i].offset = offset;
-			(*size)++;
 			return;
 		}
 		if(strcmp(name, table[i].name) == 0) error("multiple declarations");
@@ -218,7 +216,8 @@ void add_variable(char* name, int offset, Variable* table, int* size) {
 
 
 void add_local(char* name, int offset) {
-	add_variable(name, offset, locals, &local_count);
+	add_variable(name, offset, locals, local_count);
+	local_count++;
 }
 
 
@@ -276,14 +275,14 @@ int expression() {
 			return 1;
 		}
 		read_lexeme();
-		expect(LEX_NUMBER);
 		push();
 		output("\tmov %s, %ld\n", regs[cache[0]], -number);
+		expect(LEX_NUMBER);
 	}
 	else if(lexeme == LEX_NUMBER) {
-		read_lexeme();
 		push();
 		output("\tmov %s, %ld\n", regs[cache[0]], number);
+		read_lexeme();
 	}
 	else if(lexeme == '(') {
 		read_lexeme();
@@ -291,10 +290,27 @@ int expression() {
 		expect(')');
 	}
 	else if(lexeme == LEX_IDENT) {
+		Variable* v = lookup_local(token);
+
+		read_lexeme();
+		if(lexeme == '(') {
+			char name[1024];
+			strcpy(name, token);
 
 
+		}
+		else if(lexeme == '[') {
+
+
+		}
+		else {
+			if(!v) error("variable not found");
+			push();
+			output("\tmov %s, QWORD PTR [rbp - %d]\n", regs[cache[0]], v->offset);
+		}
 	}
 	else return 0;
+
 
 
 	// TODO: check for opperand
@@ -329,7 +345,6 @@ int statement() {
 		}
 		output("\tleave\n");
 		output("\tret\n");
-		expect(';');
 	}
 	else return expression();
 	return 1;
