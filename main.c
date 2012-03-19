@@ -258,14 +258,23 @@ void pop() {
 }
 
 
-int expression() {
+int is_expr_beginning() {
+	static const int lexemes[] = { '-', '!', '(',
+		LEX_NUMBER, LEX_STRING, LEX_IDENT };
+	for(int i = 0; i < sizeof(lexemes) / sizeof(int); i++)
+		if(lexeme == lexemes[i]) return 1;
+	return 0;
+}
+
+
+void expression() {
 	if(lexeme == '!') {
 		read_lexeme();
 		expression();
 		output("\ttest %s, %s\n", regs[cache[0]], regs[cache[0]]);
 		output("\tsetz cl\n");
 		output("\tmovzx %s, cl\n", regs[cache[0]]);
-		return 1;
+		return;
 	}
 
 	if(lexeme == '-') {
@@ -273,7 +282,7 @@ int expression() {
 			read_lexeme();
 			expression();
 			output("\tneg %s\n", regs[cache[0]]);
-			return 1;
+			return;
 		}
 		read_lexeme();
 		push();
@@ -298,10 +307,35 @@ int expression() {
 			char name[256];
 			strcpy(name, token);
 
+			for(int i = stack_size - 1; i >= 0; i--) {
+				output("\tpush %s\n", regs[cache[0]]);
+			}
+			int old_size = stack_size;
+			stack_size = 0;
+			int args = 0;
+
+			// expr list...
+			read_lexeme();
+			if(is_expr_beginning()) {
+				expression();
+				args++;
+				if(lexeme == ',') {
+					read_lexeme();
+					expression();
+				}
+
+			}
+
+			// call()
+//TODO		for(int i = 0; i < stack...
+
 
 		}
 		else if(lexeme == '[') {
 
+
+		}
+		else if(lexeme == ':') {
 
 		}
 		else {
@@ -320,18 +354,18 @@ int expression() {
 		label++;
 		read_lexeme();
 	}
-	else return 0;
+	else error("bad expression");
 
 
 
 	// TODO: check for opperand
 
 
-	return 1;
 }
 
 
-int statement() {
+void statement() {
+
 	if(lexeme == LEX_IF) {
 
 
@@ -350,20 +384,23 @@ int statement() {
 	}
 	else if(lexeme == LEX_RETURN) {
 		read_lexeme();
-		if(expression()) {
+		if(is_expr_beginning()) {
 			if(strcmp(regs[cache[0]], "rax") != 0)
 				output("\tmov rax, %s\n", regs[cache[0]]);
 		}
 		output("\tleave\n");
 		output("\tret\n");
 	}
-	else return expression();
-	return 1;
+	else if(is_expr_beginning()) {
+		expression();
+	}
 }
 
 
 void statement_list() {
-	while(statement()) {}
+	// TODO
+	statement();
+
 }
 
 
