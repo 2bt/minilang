@@ -1,0 +1,3 @@
+main()
+	puts("Hello, world!")
+end

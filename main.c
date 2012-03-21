@@ -3,6 +3,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 
 
 enum {
@@ -259,14 +260,25 @@ void pop() {
 int is_expr_beginning() {
 	static const int lexemes[] = { '-', '!', '(',
 		LEX_NUMBER, LEX_STRING, LEX_IDENT };
-
 	for(int i = 0; i < sizeof(lexemes) / sizeof(int); i++)
 		if(lexeme == lexemes[i]) return 1;
 	return 0;
 }
 
 
+int is_stmt_beginning() {
+	return is_expr_beginning() ||
+		lexeme == LEX_IF ||
+		lexeme == LEX_WHILE ||
+		lexeme == LEX_BREAK ||
+		lexeme == LEX_CONTINUE ||
+		lexeme == LEX_RETURN;
+}
+
+
 void expression() {
+
+	// monadic operands
 	if(lexeme == '!') {
 		read_lexeme();
 		expression();
@@ -275,7 +287,6 @@ void expression() {
 		output("\tmovzx %s, cl\n", regs[cache[0]]);
 		return;
 	}
-
 	if(lexeme == '-') {
 		if(!neg_number) {
 			read_lexeme();
@@ -302,40 +313,70 @@ void expression() {
 		Variable* v = lookup_local(token);
 
 		read_lexeme();
-		if(lexeme == '(') {
+		if(lexeme == '(') {	// function call
 			char name[64];
 			strcpy(name, token);
 
-			for(int i = stack_size - 1; i >= 0; i--) {
-				output("\tpush %s\n", regs[cache[0]]);
-			}
+
+
+			// TODO: save and restore cache
+/*			// push currently used registers
+			int used_regs = (stack_size > cache_size) ? cache_size : stack_size;
+			for(int i = used_regs - 1; i >= 0; i--)
+				output("\tpush %s\n", regs[cache[i]]);
+*/
+//			for(int i = 0; i < cache_size; i++) push();
+
+
 			int old_size = stack_size;
 			stack_size = 0;
-			int args = 0;
 
-			// expr list...
+			// expr list
+			int args = 0;
 			read_lexeme();
 			if(is_expr_beginning()) {
-				expression();
 				args++;
-				if(lexeme == ',') {
+				expression();
+				output("\tpush %s\n", regs[cache[0]]);
+				pop();
+				while(lexeme == ',') {
 					read_lexeme();
+					args++;
+					if(args > 6) error("too many arguments");
 					expression();
+					output("\tpush %s\n", regs[cache[0]]);
+					pop();
 				}
-
 			}
+			expect(')');
 
-			// call()
-//TODO		for(int i = 0; i < stack...
 
+			// just checking...
+			assert(stack_size == 0);
+
+
+			// set up registers
+			for(int i = args - 1; i >= 0; i--)
+				output("\tpop %s\n", call_regs[i]);
+			output("\txor rax, rax\n");
+
+			// call
+			output("\tcall %s\n", name);
+
+			// return value in rax
+			init_cache();
+			push();
+			stack_size = old_size + 1;
 
 		}
 		else if(lexeme == '[') {
-
-
+			error("not implementet yet");
 		}
-		else if(lexeme == ':') {
-
+		else if(lexeme == ':') {	// assignment
+			if(!v) error("variable not found");
+			read_lexeme();
+			expression();
+			output("\tmov QWORD PTR [rbp - %d], %s\n", v->offset, regs[cache[0]]);
 		}
 		else {
 			if(!v) error("variable not found");
@@ -344,11 +385,11 @@ void expression() {
 		}
 	}
 	else if(lexeme == LEX_STRING) {
+		push();
 		output("\t.section .rodata\n");
 		output("LC%d:\n", label);
 		output("\t.string %s\n", token);
 		output("\t.text\n");
-		push();
 		output("\tmov %s, OFFSET LC%d\n", regs[cache[0]], label);
 		label++;
 		read_lexeme();
@@ -357,14 +398,28 @@ void expression() {
 
 
 
-	// TODO: check for opperand
+	// dyadic operands
+	if(lexeme == '+') {
+		read_lexeme();
+		expression();
+		output("\tadd %s, %s\n", regs[cache[1]], regs[cache[0]]);
+		pop();
+	}
+	else if(lexeme == '-') {
+		read_lexeme();
+		expression();
+		output("\tsub %s, %s\n", regs[cache[1]], regs[cache[0]]);
+		pop();
+	}
 
 
 }
 
 
-void statement() {
+void statement_list();
 
+
+void statement() {
 	if(lexeme == LEX_IF) {
 
 
@@ -384,6 +439,7 @@ void statement() {
 	else if(lexeme == LEX_RETURN) {
 		read_lexeme();
 		if(is_expr_beginning()) {
+			expression();
 			if(strcmp(regs[cache[0]], "rax") != 0)
 				output("\tmov rax, %s\n", regs[cache[0]]);
 		}
@@ -392,14 +448,14 @@ void statement() {
 	}
 	else if(is_expr_beginning()) {
 		expression();
+		pop();
 	}
 }
 
 
 void statement_list() {
-	// TODO
-	statement();
-
+	while(is_stmt_beginning())
+		statement();
 }
 
 
@@ -411,7 +467,7 @@ void minilang() {
 		expect(LEX_IDENT);
 
 
-		// only functions for now
+		// only functions in global scope for now
 		output("\t.globl %s\n", token);
 		output("%s:\n", token);
 		output("\tpush rbp\n");
@@ -420,22 +476,22 @@ void minilang() {
 		frame = 0;
 		local_count = 0;
 
-		int param_count = 0;
+		int params = 0;
 		expect('(');
 		if(lexeme == LEX_IDENT) {
-			param_count++;
+			params++;
 			param_decl();
 			while(lexeme == ',') {
 				read_lexeme();
-				param_count++;
-				if(param_count > 6) error("too many arguments");
+				params++;
+				if(params > 6) error("too many arguments");
 				param_decl();
 			}
 		}
 		expect(')');
 
 		if(frame > 0) output("\tsub rsp, %d\n", frame);
-		for(int i = 0; i < param_count; i++) {
+		for(int i = 0; i < params; i++) {
 			output("\tmov QWORD PTR [rbp - %d], %s\n", i * 8 + 8, call_regs[i]);
 		}
 

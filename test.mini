@@ -1,3 +1,4 @@
 main(argc, argv)
-	return "hallo"
+	printf("res = %d\n", 4 + 2)
+	return 0
 end
