@@ -1,4 +1,19 @@
-main(argc, argv)
-	printf("res = %d\n", 4 + 2)
+
+qword_at()
+	asm		mov rax, QWORD PTR [rdi + rsi * 8]
+end
+
+byte_at()
+	asm		mov cl, BYTE PTR [rdi + rsi]
+	asm		movzx	rax, cl
+end
+
+main(argc, argv, x)
+	x : 1
+//	printf("argv[%d] = %s\n", x,  qword_at(argv, x))
+
+	printf("%c\n", byte_at(qword_at(argv, 0), 2))
+
 	return 0
 end
+

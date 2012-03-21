@@ -8,7 +8,8 @@
 
 enum {
 	LEX_EOF = EOF,
-	LEX_IF = 0,
+	LEX_ASM = 0,
+	LEX_IF,
 	LEX_ELSE,
 	LEX_ELIF,
 	LEX_END,
@@ -24,8 +25,8 @@ enum {
 	LEX_SIZE
 };
 
-const char* keywords[] = { "if", "else", "elif", "end", "while", "break",
-	"continue", "return", NULL, NULL, NULL, "number", "identifier" };
+const char* keywords[] = { "asm", "if", "else", "elif", "end", "while", "break",
+	"continue", "return", NULL, NULL, "string", "number", "identifier" };
 const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 
 
@@ -130,9 +131,21 @@ int scan() {
 
 		// check for keywords
 		for(i = 0; i < LEX_KEYWORD_COUNT; i++) {
-			if(strcmp(token, keywords[i]) == 0) return i;
+			if(strcmp(token, keywords[i]) == 0) {
+				if(i == LEX_ASM) {
+					while(isspace(character)) read_char();
+					int j;
+					for(j = 0; j < 1024 && character != '\n'; j++) {
+						token[j] = read_char();
+					}
+					if(j == 1024) error("asm command too long");
+					token[j] = 0;
+				}
+				return i;
+			}
 		}
 		return LEX_IDENT;
+
 	}
 
 	if(character != EOF) error("unknown character");
@@ -171,7 +184,6 @@ Variable	locals[1024];
 int			local_count;
 
 int			frame;
-int			param_count;
 
 int			label;
 
@@ -268,11 +280,9 @@ int is_expr_beginning() {
 
 int is_stmt_beginning() {
 	return is_expr_beginning() ||
-		lexeme == LEX_IF ||
-		lexeme == LEX_WHILE ||
-		lexeme == LEX_BREAK ||
-		lexeme == LEX_CONTINUE ||
-		lexeme == LEX_RETURN;
+		lexeme == LEX_ASM || lexeme == LEX_IF ||
+		lexeme == LEX_WHILE || 	lexeme == LEX_BREAK ||
+		lexeme == LEX_CONTINUE || lexeme == LEX_RETURN;
 }
 
 
@@ -411,6 +421,12 @@ void expression() {
 		output("\tsub %s, %s\n", regs[cache[1]], regs[cache[0]]);
 		pop();
 	}
+	else if(lexeme == '*') {
+		read_lexeme();
+		expression();
+		output("\timul %s, %s\n", regs[cache[1]], regs[cache[0]]);
+		pop();
+	}
 
 
 }
@@ -420,7 +436,11 @@ void statement_list();
 
 
 void statement() {
-	if(lexeme == LEX_IF) {
+	if(lexeme == LEX_ASM) {
+		output("\t%s\n", token);
+		read_lexeme();
+	}
+	else if(lexeme == LEX_IF) {
 
 
 	}
