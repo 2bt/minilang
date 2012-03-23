@@ -1,19 +1,18 @@
 
-qword_at()
-	asm		mov rax, QWORD PTR [rdi + rsi * 8]
-end
 
-byte_at()
-	asm		mov cl, BYTE PTR [rdi + rsi]
-	asm		movzx	rax, cl
-end
+# inline asm
+qword_at():asm:mov rax, QWORD PTR [rdi + rsi * 8]
 
-main(argc, argv, x)
-	x : 1
-//	printf("argv[%d] = %s\n", x,  qword_at(argv, x))
+byte_at():
+	asm:
+		mov		cl, BYTE PTR [rdi + rsi]
+		movzx	rax, cl
 
-	printf("%c\n", byte_at(qword_at(argv, 0), 2))
 
+main(argc, argv, x):
+
+	x = 1	# we can't declare local variables yet
+	printf("%d\n", 23 * 42)
+	printf("%s\n", qword_at(argv, 0))
 	return 0
-end
 

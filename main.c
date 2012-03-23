@@ -12,21 +12,37 @@ enum {
 	LEX_IF,
 	LEX_ELSE,
 	LEX_ELIF,
-	LEX_END,
 	LEX_WHILE,
 	LEX_BREAK,
 	LEX_CONTINUE,
 	LEX_RETURN,
 	LEX_KEYWORD_COUNT,
+	LEX_BLOCK_END,
 	LEX_CHAR,
 	LEX_STRING,
 	LEX_NUMBER,
 	LEX_IDENT,
+	LEX_ASM_LINE,
 	LEX_SIZE
 };
 
-const char* keywords[] = { "asm", "if", "else", "elif", "end", "while", "break",
-	"continue", "return", NULL, NULL, "string", "number", "identifier" };
+const char* keywords[] = {
+	"asm",
+	"if",
+	"else",
+	"elif",
+	"while",
+	"break",
+	"continue",
+	"return",
+	NULL,
+	"block end",
+	"character",
+	"string",
+	"number",
+	"identifier",
+	NULL,
+};
 const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 
 
@@ -36,8 +52,14 @@ int			lexeme;
 char		token[1024];
 long long	number;
 int			neg_number;
-int			line_number;
-int			cursor_pos;
+int			line_number = 0;
+int			cursor_pos = 0;
+
+int			brackets = 0;
+int			block = 0;
+int			indent = 0;
+int			newline = 1;
+int			asm_active = 0;
 
 FILE*		src_file;
 FILE*		dst_file;
@@ -75,22 +97,58 @@ int read_char() {
 
 
 int scan() {
-
-	while(isspace(character)) read_char();
-
-	// ignore comment
-	if(character == '/') {
+space:
+	while(isspace(character)) {
+		if(newline) {
+			if(character == ' ') indent++;
+			if(character == '\t') indent = (indent & ~3) + 4;
+		}
+		if(character == '\n') {
+			indent = 0;
+			int n = newline;
+			newline = 1;
+			if(n == 0 && brackets == 0) return ';';
+		}
 		read_char();
-		if(character != '/') return '/';
-		while(read_char() != '\n') {}
-		while(isspace(character)) read_char();
 	}
 
+	// ignore comment
+	if(character == '#') {
+		while(character != '\n') read_char();
+		goto space;
+	}
+
+	// indent
+	if(indent > block) error("invalid indentation");
+	if(indent < block) {
+		asm_active = 0;
+		block -= 4;
+		return LEX_BLOCK_END;
+	}
+
+	// asm line
+	if(asm_active) {
+		int i = 0;
+		while(character != '\n') {
+			token[i] = read_char();
+			i++;
+		}
+		token[i] = '\0';
+		return LEX_ASM_LINE;
+	}
+
+	newline = 0;
 	// one character token
-	if(strchr("-+*%&|^~!=<>;:(),", character)) {
+	if(strchr("-+*/%&|^~!=<>;:(),", character)) {
 		int c = character;
 		read_char();
-		neg_number = (c == '-' && isdigit(character));
+		if(c == ':') {	// new block
+			block += 4;
+			indent += 4;
+		}
+		else if(c == '(' || c == '[') brackets++;
+		else if(c == ')' || c == ']') brackets--;
+		if(isdigit(character)) neg_number = (c == '-');
 		return c;
 	}
 
@@ -121,6 +179,7 @@ int scan() {
 		return LEX_NUMBER;
 	}
 
+	// identifier and keywords
 	if(isalpha(character) || character == '_') {
 		int i = 0;
 		do {
@@ -131,24 +190,17 @@ int scan() {
 
 		// check for keywords
 		for(i = 0; i < LEX_KEYWORD_COUNT; i++) {
-			if(strcmp(token, keywords[i]) == 0) {
-				if(i == LEX_ASM) {
-					while(isspace(character)) read_char();
-					int j;
-					for(j = 0; j < 1024 && character != '\n'; j++) {
-						token[j] = read_char();
-					}
-					if(j == 1024) error("asm command too long");
-					token[j] = 0;
-				}
-				return i;
-			}
+			if(strcmp(token, keywords[i]) == 0) return i;
 		}
 		return LEX_IDENT;
-
 	}
 
 	if(character != EOF) error("unknown character");
+	if(block > 0) {
+		block -= 4;
+		puts("ND");
+		return LEX_BLOCK_END;
+	}
 	return LEX_EOF;
 }
 
@@ -168,7 +220,7 @@ void init_scanner() {
 void expect(int l) {
 	if(lexeme != l) {
 		if(l < LEX_SIZE) error("%s expected", keywords[l]);
-		else error("%c expected", l);
+		else error("<%c> expected", l);
 	}
 	read_lexeme();
 }
@@ -279,7 +331,7 @@ int is_expr_beginning() {
 
 
 int is_stmt_beginning() {
-	return is_expr_beginning() ||
+	return is_expr_beginning() || lexeme == ';' ||
 		lexeme == LEX_ASM || lexeme == LEX_IF ||
 		lexeme == LEX_WHILE || 	lexeme == LEX_BREAK ||
 		lexeme == LEX_CONTINUE || lexeme == LEX_RETURN;
@@ -382,7 +434,7 @@ void expression() {
 		else if(lexeme == '[') {
 			error("not implementet yet");
 		}
-		else if(lexeme == ':') {	// assignment
+		else if(lexeme == '=') {	// assignment
 			if(!v) error("variable not found");
 			read_lexeme();
 			expression();
@@ -437,8 +489,15 @@ void statement_list();
 
 void statement() {
 	if(lexeme == LEX_ASM) {
-		output("\t%s\n", token);
 		read_lexeme();
+		asm_active = 1;
+		newline = 1;
+		expect(':');
+		while(lexeme == LEX_ASM_LINE) {
+			if(lexeme == LEX_ASM_LINE) output("\t%s\n", token);
+			read_lexeme();
+		}
+		expect(LEX_BLOCK_END);
 	}
 	else if(lexeme == LEX_IF) {
 
@@ -470,6 +529,7 @@ void statement() {
 		expression();
 		pop();
 	}
+	else expect(';');
 }
 
 
@@ -509,6 +569,7 @@ void minilang() {
 			}
 		}
 		expect(')');
+		expect(':');
 
 		if(frame > 0) output("\tsub rsp, %d\n", frame);
 		for(int i = 0; i < params; i++) {
@@ -517,10 +578,10 @@ void minilang() {
 
 		init_cache();
 		statement_list();
-		expect(LEX_END);
-
 		output("\tleave\n");
 		output("\tret\n");
+		expect(LEX_BLOCK_END);
+
 	}
 }
 
