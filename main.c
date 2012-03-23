@@ -560,12 +560,14 @@ void statement() {
 		output(".L%d:\n", while_labels[while_level] + 1);
 	}
 	else if(lexeme == LEX_BREAK) {
-
-
+		read_lexeme();
+		if(while_level < 0) error("break without while");
+		output("\tjmp .L%d\n", while_labels[while_level] + 1);
 	}
 	else if(lexeme == LEX_CONTINUE) {
-
-
+		read_lexeme();
+		if(while_level < 0) error("continue without while");
+		output("\tjmp .L%d\n", while_labels[while_level]);
 	}
 	else if(lexeme == LEX_RETURN) {
 		read_lexeme();
