@@ -225,6 +225,8 @@ void expect(int l) {
 }
 
 
+
+
 // symbol table
 typedef struct {
 	char	name[64];
@@ -233,8 +235,9 @@ typedef struct {
 
 Variable	locals[1024];
 int			local_count;
+
+// code generation
 int			frame;
-int			label = 0;
 const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 const char*	regs[] = { "r8", "r9", "r11", "rax" };
 enum {
@@ -242,6 +245,10 @@ enum {
 };
 int			cache[cache_size];
 int			stack_size;
+int			label = 0;
+int			while_labels[256];
+int			while_level = -1;
+
 
 const char* regname(int i) { return regs[cache[i]]; }
 
@@ -501,7 +508,6 @@ void statement() {
 		read_lexeme();
 		expression();
 		expect(':');
-
 		int l_end = label++;
 		int l_next = label++;
 		int end = 0;
@@ -524,10 +530,8 @@ void statement() {
 			output("\tjz .L%d\n", l_next);
 			statement_list();
 			expect(LEX_BLOCK_END);
-			if(lexeme == LEX_ELIF || lexeme == LEX_ELSE) {
+			if(lexeme == LEX_ELIF || lexeme == LEX_ELSE)
 				output("\tjmp .L%d\n", l_end);
-				end = 1;
-			}
 			output(".L%d:\n", l_next);
 		}
 		if(lexeme == LEX_ELSE) {
@@ -539,8 +543,21 @@ void statement() {
 		if(end) output(".L%d:\n", l_end);
 	}
 	else if(lexeme == LEX_WHILE) {
-
-
+		read_lexeme();
+		while_level++;
+		if(while_level == 256) error("while nesting limit exceeded");
+		while_labels[while_level] = label;
+		label += 2;
+		output(".L%d:\n", while_labels[while_level]);
+		expression();
+		expect(':');
+		output("\ttest %s, %s\n", regname(0), regname(0));
+		output("\tjz .L%d\n", while_labels[while_level] + 1);
+		init_cache();
+		statement_list();
+		expect(LEX_BLOCK_END);
+		output("\tjmp .L%d\n", while_labels[while_level]);
+		output(".L%d:\n", while_labels[while_level] + 1);
 	}
 	else if(lexeme == LEX_BREAK) {
 
