@@ -43,7 +43,6 @@ const char* keywords[] = {
 	"identifier",
 	NULL,
 };
-const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 
 
 //	scanner
@@ -234,11 +233,9 @@ typedef struct {
 
 Variable	locals[1024];
 int			local_count;
-
 int			frame;
-
-int			label;
-
+int			label = 0;
+const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 const char*	regs[] = { "r8", "r9", "r11", "rax" };
 enum {
 			cache_size = sizeof(regs) / sizeof(char*)
@@ -246,6 +243,7 @@ enum {
 int			cache[cache_size];
 int			stack_size;
 
+const char* regname(int i) { return regs[cache[i]]; }
 
 void init_cache() {
 	for(int i = 0; i < cache_size; i++) cache[i] = i;
@@ -344,26 +342,26 @@ void expression() {
 	if(lexeme == '!') {
 		read_lexeme();
 		expression();
-		output("\ttest %s, %s\n", regs[cache[0]], regs[cache[0]]);
+		output("\ttest %s, %s\n", regname(0), regname(0));
 		output("\tsetz cl\n");
-		output("\tmovzx %s, cl\n", regs[cache[0]]);
+		output("\tmovzx %s, cl\n", regname(0));
 		return;
 	}
 	if(lexeme == '-') {
 		if(!neg_number) {
 			read_lexeme();
 			expression();
-			output("\tneg %s\n", regs[cache[0]]);
+			output("\tneg %s\n", regname(0));
 			return;
 		}
 		read_lexeme();
 		push();
-		output("\tmov %s, %ld\n", regs[cache[0]], -number);
+		output("\tmov %s, %ld\n", regname(0), -number);
 		expect(LEX_NUMBER);
 	}
 	else if(lexeme == LEX_NUMBER) {
 		push();
-		output("\tmov %s, %ld\n", regs[cache[0]], number);
+		output("\tmov %s, %ld\n", regname(0), number);
 		read_lexeme();
 	}
 	else if(lexeme == '(') {
@@ -399,14 +397,14 @@ void expression() {
 			if(is_expr_beginning()) {
 				args++;
 				expression();
-				output("\tpush %s\n", regs[cache[0]]);
+				output("\tpush %s\n", regname(0));
 				pop();
 				while(lexeme == ',') {
 					read_lexeme();
 					args++;
 					if(args > 6) error("too many arguments");
 					expression();
-					output("\tpush %s\n", regs[cache[0]]);
+					output("\tpush %s\n", regname(0));
 					pop();
 				}
 			}
@@ -438,12 +436,12 @@ void expression() {
 			if(!v) error("variable not found");
 			read_lexeme();
 			expression();
-			output("\tmov QWORD PTR [rbp - %d], %s\n", v->offset, regs[cache[0]]);
+			output("\tmov QWORD PTR [rbp - %d], %s\n", v->offset, regname(0));
 		}
 		else {
 			if(!v) error("variable not found");
 			push();
-			output("\tmov %s, QWORD PTR [rbp - %d]\n", regs[cache[0]], v->offset);
+			output("\tmov %s, QWORD PTR [rbp - %d]\n", regname(0), v->offset);
 		}
 	}
 	else if(lexeme == LEX_STRING) {
@@ -452,7 +450,7 @@ void expression() {
 		output("LC%d:\n", label);
 		output("\t.string %s\n", token);
 		output("\t.text\n");
-		output("\tmov %s, OFFSET LC%d\n", regs[cache[0]], label);
+		output("\tmov %s, OFFSET LC%d\n", regname(0), label);
 		label++;
 		read_lexeme();
 	}
@@ -464,19 +462,19 @@ void expression() {
 	if(lexeme == '+') {
 		read_lexeme();
 		expression();
-		output("\tadd %s, %s\n", regs[cache[1]], regs[cache[0]]);
+		output("\tadd %s, %s\n", regname(1), regname(0));
 		pop();
 	}
 	else if(lexeme == '-') {
 		read_lexeme();
 		expression();
-		output("\tsub %s, %s\n", regs[cache[1]], regs[cache[0]]);
+		output("\tsub %s, %s\n", regname(1), regname(0));
 		pop();
 	}
 	else if(lexeme == '*') {
 		read_lexeme();
 		expression();
-		output("\timul %s, %s\n", regs[cache[1]], regs[cache[0]]);
+		output("\timul %s, %s\n", regname(1), regname(0));
 		pop();
 	}
 
@@ -500,8 +498,45 @@ void statement() {
 		expect(LEX_BLOCK_END);
 	}
 	else if(lexeme == LEX_IF) {
+		read_lexeme();
+		expression();
+		expect(':');
 
-
+		int l_end = label++;
+		int l_next = label++;
+		int end = 0;
+		output("\ttest %s, %s\n", regname(0), regname(0));
+		output("\tjz .L%d\n", l_next);
+		init_cache();
+		statement_list();
+		expect(LEX_BLOCK_END);
+		if(lexeme == LEX_ELIF || lexeme == LEX_ELSE) {
+			output("\tjmp .L%d\n", l_end);
+			end = 1;
+		}
+		output(".L%d:\n", l_next);
+		while(lexeme == LEX_ELIF) {
+			read_lexeme();
+			expression();
+			expect(':');
+			l_next = label++;
+			output("\ttest %s, %s\n", regname(0), regname(0));
+			output("\tjz .L%d\n", l_next);
+			statement_list();
+			expect(LEX_BLOCK_END);
+			if(lexeme == LEX_ELIF || lexeme == LEX_ELSE) {
+				output("\tjmp .L%d\n", l_end);
+				end = 1;
+			}
+			output(".L%d:\n", l_next);
+		}
+		if(lexeme == LEX_ELSE) {
+			read_lexeme();
+			expect(':');
+			statement_list();
+			expect(LEX_BLOCK_END);
+		}
+		if(end) output(".L%d:\n", l_end);
 	}
 	else if(lexeme == LEX_WHILE) {
 
@@ -519,8 +554,8 @@ void statement() {
 		read_lexeme();
 		if(is_expr_beginning()) {
 			expression();
-			if(strcmp(regs[cache[0]], "rax") != 0)
-				output("\tmov rax, %s\n", regs[cache[0]]);
+			if(strcmp(regname(0), "rax") != 0)
+				output("\tmov rax, %s\n", regname(0));
 		}
 		output("\tleave\n");
 		output("\tret\n");
@@ -613,7 +648,6 @@ int main(int argc, char** argv) {
 
 	init_scanner();
 
-	label = 0;
 
 	minilang();
 

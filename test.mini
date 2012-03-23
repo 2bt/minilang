@@ -10,11 +10,21 @@ byte_at():
 		mov		cl, BYTE PTR [rdi + rsi]
 		movzx	rax, cl
 
+# we can't declare local variables yet
+main(argc, argv, x, y):
 
-main(argc, argv, x):
+	printf("type in a number\n");
+	x = malloc(100)
+	y = atoi(gets(x))
+	free(x)
+	printf("%d * 3 = %d\n", y, y * 3)
 
-	x = 1	# we can't declare local variables yet
-	printf("%d\n", 23 * 42)
-	printf("%s\n", qword_at(argv, 0))
+	if !y:
+		printf("y is zero\n")
+	elif !y - 2:
+		printf("y is two\n")
+	else:
+		puts("foobar")
+
 	return 0
 
