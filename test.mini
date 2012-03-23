@@ -1,7 +1,9 @@
 
 
 # inline asm
-qword_at():asm:mov rax, QWORD PTR [rdi + rsi * 8]
+qword_at():
+	asm:
+		mov rax, QWORD PTR [rdi + rsi * 8]
 
 byte_at():
 	asm:
