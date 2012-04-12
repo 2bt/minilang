@@ -1,15 +1,18 @@
-
 # inline asm
-qword_at():asm:
+qword_at():
+	asm:
 		mov rax, QWORD PTR [rdi + rsi * 8]
 
-byte_at():asm:
+byte_at():
+	asm:
 		mov cl, BYTE PTR [rdi + rsi]
 		movzx rax, cl
+
 
 # we can't declare local variables yet
 main(argc, argv, x, y):
 
+	printf("%d\n", 0 - 18 + 1)
 
 	x = 0
 	while x - argc:

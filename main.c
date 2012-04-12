@@ -204,9 +204,7 @@ space:
 }
 
 
-void read_lexeme() {
-	lexeme = scan();
-}
+void read_lexeme() { lexeme = scan(); }
 
 
 void init_scanner() {
@@ -223,8 +221,6 @@ void expect(int l) {
 	}
 	read_lexeme();
 }
-
-
 
 
 // symbol table
@@ -251,6 +247,7 @@ int			while_level = -1;
 
 
 const char* regname(int i) { return regs[cache[i]]; }
+
 
 void init_cache() {
 	for(int i = 0; i < cache_size; i++) cache[i] = i;
@@ -327,8 +324,9 @@ void pop() {
 
 
 int is_expr_beginning() {
-	static const int lexemes[] = { '-', '!', '(',
-		LEX_NUMBER, LEX_STRING, LEX_IDENT };
+	static const int lexemes[] = {
+		'-', '!', '(', LEX_NUMBER, LEX_STRING, LEX_IDENT
+	};
 	for(int i = 0; i < sizeof(lexemes) / sizeof(int); i++)
 		if(lexeme == lexemes[i]) return 1;
 	return 0;
@@ -336,19 +334,21 @@ int is_expr_beginning() {
 
 
 int is_stmt_beginning() {
-	return is_expr_beginning() || lexeme == ';' ||
-		lexeme == LEX_ASM || lexeme == LEX_IF ||
-		lexeme == LEX_WHILE || 	lexeme == LEX_BREAK ||
-		lexeme == LEX_CONTINUE || lexeme == LEX_RETURN;
+	static const int lexemes[] = {
+		LEX_ASM, LEX_IF, LEX_WHILE, LEX_BREAK, LEX_CONTINUE, LEX_RETURN, ';'
+	};
+	for(int i = 0; i < sizeof(lexemes) / sizeof(int); i++)
+		if(lexeme == lexemes[i]) return 1;
+	return is_expr_beginning();
 }
 
 
-void expression() {
+void expression();
+void expr_level_zero() {
 
-	// monadic operands
 	if(lexeme == '!') {
 		read_lexeme();
-		expression();
+		expr_level_zero();
 		output("\ttest %s, %s\n", regname(0), regname(0));
 		output("\tsetz cl\n");
 		output("\tmovzx %s, cl\n", regname(0));
@@ -357,14 +357,14 @@ void expression() {
 	if(lexeme == '-') {
 		if(!neg_number) {
 			read_lexeme();
-			expression();
+			expr_level_zero();
 			output("\tneg %s\n", regname(0));
 			return;
 		}
 		read_lexeme();
 		push();
 		output("\tmov %s, %ld\n", regname(0), -number);
-		expect(LEX_NUMBER);
+		expr_level_zero(LEX_NUMBER);
 	}
 	else if(lexeme == LEX_NUMBER) {
 		push();
@@ -383,8 +383,6 @@ void expression() {
 		if(lexeme == '(') {	// function call
 			char name[64];
 			strcpy(name, token);
-
-
 
 			// TODO: save and restore cache
 /*			// push currently used registers
@@ -417,14 +415,13 @@ void expression() {
 			}
 			expect(')');
 
-
 			// just checking...
 			assert(stack_size == 0);
 
-
 			// set up registers
-			for(int i = args - 1; i >= 0; i--)
+			for(int i = args - 1; i >= 0; i--) {
 				output("\tpop %s\n", call_regs[i]);
+			}
 			output("\txor rax, rax\n");
 
 			// call
@@ -463,33 +460,50 @@ void expression() {
 	}
 	else error("bad expression");
 
-
-
-	// dyadic operands
-	if(lexeme == '+') {
-		read_lexeme();
-		expression();
-		output("\tadd %s, %s\n", regname(1), regname(0));
-		pop();
-	}
-	else if(lexeme == '-') {
-		read_lexeme();
-		expression();
-		output("\tsub %s, %s\n", regname(1), regname(0));
-		pop();
-	}
-	else if(lexeme == '*') {
-		read_lexeme();
-		expression();
-		output("\timul %s, %s\n", regname(1), regname(0));
-		pop();
-	}
-
-
 }
 
 
-void statement_list();
+void expr_level_one() {
+	expr_level_zero();
+	while(strchr("*%/", lexeme)) {
+		if(lexeme == '*') {
+			read_lexeme();
+			expr_level_zero();
+			output("\timul %s, %s\n", regname(1), regname(0));
+			pop();
+		}
+		else if(lexeme == '%') {
+			error("TODO");
+		}
+		else if(lexeme == '/') {
+			error("TODO");
+		}
+	}
+}
+
+void expression() {
+	expr_level_one();
+	while(strchr("+-", lexeme)) {
+		if(lexeme == '+') {
+			read_lexeme();
+			expr_level_one();
+			output("\tadd %s, %s\n", regname(1), regname(0));
+			pop();
+		}
+		else if(lexeme == '-') {
+			read_lexeme();
+			expr_level_one();
+			output("\tsub %s, %s\n", regname(1), regname(0));
+			pop();
+		}
+	}
+}
+
+
+void statement();
+void statement_list() {
+	while(is_stmt_beginning()) statement();
+}
 
 
 void statement() {
@@ -587,13 +601,11 @@ void statement() {
 }
 
 
-void statement_list() {
-	while(is_stmt_beginning())
-		statement();
-}
 
 
 void minilang() {
+	init_scanner();
+
 	output("\t.intel_syntax noprefix\n");
 	output("\t.text\n");
 
@@ -661,16 +673,8 @@ int main(int argc, char** argv) {
 		if(!src_file) error("opening output file failed");
 	}
 	else dst_file = stdout;
-
 	atexit(cleanup);
-
-
-	init_scanner();
-
-
 	minilang();
-
-
 	return 0;
 }
 
