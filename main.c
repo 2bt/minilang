@@ -24,6 +24,10 @@ enum {
 	LEX_NUMBER,
 	LEX_IDENT,
 	LEX_ASM_LINE,
+	LEX_LE,
+	LEX_GE,
+	LEX_EQ,
+	LEX_NE,
 	LEX_SIZE
 };
 
@@ -43,7 +47,6 @@ const char* keywords[] = {
 	"string",
 	"number",
 	"identifier",
-	NULL,
 };
 
 
@@ -147,6 +150,15 @@ space:
 			block += 4;
 			indent += 4;
 		}
+		else if(strchr("<>!=", c) && character == '=') {
+			read_char();
+			switch(c) {
+			case '<': return LEX_LE;
+			case '>': return LEX_GE;
+			case '=': return LEX_EQ;
+			case '!': return LEX_NE;
+			}
+		}
 		else if(c == '(' || c == '[') brackets++;
 		else if(c == ')' || c == ']') brackets--;
 		if(isdigit(character)) neg_number = (c == '-');
@@ -233,6 +245,7 @@ typedef struct {
 
 Variable	locals[1024];
 int			local_count;
+
 
 // code generation
 const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
@@ -497,21 +510,44 @@ void expr_level_two() {
 }
 
 
-void expression() {
+void expr_level_three() {
 	expr_level_two();
-	while(strchr("<>", lexeme)) {
-		char* equal = "";
-		char* comp = "g";
-		if(lexeme == '<') comp = "l";
+	char* comp;
+	switch(lexeme) {
+	case '<': comp = "l"; break;
+	case '>': comp = "g"; break;
+	case LEX_LE: comp = "le"; break;
+	case LEX_GE: comp = "ge"; break;
+	case LEX_EQ: comp = "e"; break;
+	case LEX_NE: comp = "ne"; break;
+	default: return;
+	}
+	read_lexeme();
+	expr_level_two();
+	output("\tcmp %s, %s\n", regname(1), regname(0));
+	output("\tset%s cl\n", comp);
+	output("\tmovzx %s, cl\n", regname(1));
+	pop();
+}
+
+
+void expr_level_four() {
+	expr_level_three();
+	while(lexeme == '&') {
 		read_lexeme();
-		if(lexeme == '=') {
-			equal = "e";
-			read_lexeme();
-		}
-		expr_level_two();
-		output("\tcmp %s, %s\n", regname(1), regname(0));
-		output("\tset%s%s cl\n", comp, equal);
-		output("\tmovzx %s, cl\n", regname(1));
+		expr_level_three();
+		output("\tand %s, %s\n", regname(1), regname(0));
+		pop();
+	}
+}
+
+
+void expression() {
+	expr_level_four();
+	while(lexeme == '|') {
+		read_lexeme();
+		expr_level_four();
+		output("\tor %s, %s\n", regname(1), regname(0));
 		pop();
 	}
 }

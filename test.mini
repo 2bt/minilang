@@ -10,8 +10,11 @@ byte_at():
 
 main(argc, argv):
 	var x
+
+	printf("%d\n", 3 & 7);
+
 	x = 0
-	while x < argc:
+	while x != argc:
 		printf("%2d: %s\n", x, qword_at(argv, x))
 		x = x + 1
 	return 0
