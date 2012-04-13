@@ -16,6 +16,7 @@ enum {
 	LEX_BREAK,
 	LEX_CONTINUE,
 	LEX_RETURN,
+	LEX_VAR,
 	LEX_KEYWORD_COUNT,
 	LEX_BLOCK_END,
 	LEX_CHAR,
@@ -35,6 +36,7 @@ const char* keywords[] = {
 	"break",
 	"continue",
 	"return",
+	"var",
 	NULL,
 	"block end",
 	"character",
@@ -233,7 +235,6 @@ Variable	locals[1024];
 int			local_count;
 
 // code generation
-int			frame;
 const char* call_regs[] = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
 const char*	regs[] = { "r8", "r9", "r11", "rax" };
 enum {
@@ -287,11 +288,6 @@ void add_local(char* name, int offset) {
 }
 
 
-void param_decl() {
-	expect(LEX_IDENT);
-	frame += 8;
-	add_local(token, frame);
-}
 
 
 void push() {
@@ -481,7 +477,8 @@ void expr_level_one() {
 	}
 }
 
-void expression() {
+
+void expr_level_two() {
 	expr_level_one();
 	while(strchr("+-", lexeme)) {
 		if(lexeme == '+') {
@@ -496,6 +493,26 @@ void expression() {
 			output("\tsub %s, %s\n", regname(1), regname(0));
 			pop();
 		}
+	}
+}
+
+
+void expression() {
+	expr_level_two();
+	while(strchr("<>", lexeme)) {
+		char* equal = "";
+		char* comp = "g";
+		if(lexeme == '<') comp = "l";
+		read_lexeme();
+		if(lexeme == '=') {
+			equal = "e";
+			read_lexeme();
+		}
+		expr_level_two();
+		output("\tcmp %s, %s\n", regname(1), regname(0));
+		output("\tset%s%s cl\n", comp, equal);
+		output("\tmovzx %s, cl\n", regname(1));
+		pop();
 	}
 }
 
@@ -601,8 +618,6 @@ void statement() {
 }
 
 
-
-
 void minilang() {
 	init_scanner();
 
@@ -619,23 +634,44 @@ void minilang() {
 		output("\tpush rbp\n");
 		output("\tmov rbp, rsp\n");
 
-		frame = 0;
+		int frame = 0;
 		local_count = 0;
 
+		// parameter list
 		int params = 0;
 		expect('(');
 		if(lexeme == LEX_IDENT) {
 			params++;
-			param_decl();
+			expect(LEX_IDENT);
+			frame += 8;
+			add_local(token, frame);
 			while(lexeme == ',') {
 				read_lexeme();
 				params++;
 				if(params > 6) error("too many arguments");
-				param_decl();
+				expect(LEX_IDENT);
+				frame += 8;
+				add_local(token, frame);
 			}
 		}
 		expect(')');
 		expect(':');
+
+		// local variables
+		while(lexeme == ';') read_lexeme();
+		while(lexeme == LEX_VAR) {
+			read_lexeme();
+			expect(LEX_IDENT);
+			frame += 8;
+			add_local(token, frame);
+			while(lexeme == ',') {
+				read_lexeme();
+				expect(LEX_IDENT);
+				frame += 8;
+				add_local(token, frame);
+			}
+			while(lexeme == ';') read_lexeme();
+		}
 
 		if(frame > 0) output("\tsub rsp, %d\n", frame);
 		for(int i = 0; i < params; i++) {

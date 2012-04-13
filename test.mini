@@ -1,4 +1,3 @@
-# inline asm
 qword_at():
 	asm:
 		mov rax, QWORD PTR [rdi + rsi * 8]
@@ -9,16 +8,10 @@ byte_at():
 		movzx rax, cl
 
 
-# we can't declare local variables yet
-main(argc, argv, x, y):
-
-	printf("%d\n", 0 - 18 + 1)
-
+main(argc, argv):
+	var x
 	x = 0
-	while x - argc:
+	while x < argc:
 		printf("%2d: %s\n", x, qword_at(argv, x))
 		x = x + 1
-
-
 	return 0
-
