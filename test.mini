@@ -1,20 +1,17 @@
-qword_at():
-	asm:
-		mov rax, QWORD PTR [rdi + rsi * 8]
-
-byte_at():
-	asm:
-		mov cl, BYTE PTR [rdi + rsi]
-		movzx rax, cl
 
 
 main(argc, argv):
-	var x
+	var x, a
 
-	printf("%d\n", 3 & 7);
+	a = "Hallo"
+	x = 0
+	while a{x}:
+		printf("<%c>\n", a{x})
+		x = x + 1
+
 
 	x = 0
-	while x != argc:
-		printf("%2d: %s\n", x, qword_at(argv, x))
+	while x < argc:
+		printf("%2d: %s\n", x, argv[x])
 		x = x + 1
 	return 0

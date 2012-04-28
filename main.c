@@ -143,7 +143,7 @@ space:
 
 	newline = 0;
 	// one character token
-	if(strchr("-+*/%&|^~!=<>;:(),", character)) {
+	if(strchr("-+*/%&|~!=<>;:()[],@{}", character)) {
 		int c = character;
 		read_char();
 		if(c == ':') {	// new block
@@ -301,8 +301,6 @@ void add_local(char* name, int offset) {
 }
 
 
-
-
 void push() {
 	int i = cache_size - 1;
 	int tmp = cache[i];
@@ -442,10 +440,7 @@ void expr_level_zero() {
 			stack_size = old_size + 1;
 
 		}
-		else if(lexeme == '[') {
-			error("not implementet yet");
-		}
-		else if(lexeme == '=') {	// assignment
+		else if(lexeme == '=') {
 			if(!v) error("variable not found");
 			read_lexeme();
 			expression();
@@ -456,6 +451,10 @@ void expr_level_zero() {
 			push();
 			output("\tmov %s, QWORD PTR [rbp - %d]\n", regname(0), v->offset);
 		}
+	}
+	else if(lexeme == '@') {
+		// dereference
+		error("not implementet yet");
 	}
 	else if(lexeme == LEX_STRING) {
 		push();
@@ -468,6 +467,45 @@ void expr_level_zero() {
 		read_lexeme();
 	}
 	else error("bad expression");
+
+	while(lexeme == '[') {
+		read_lexeme();
+		expression();
+		expect(']');
+		if(lexeme == '=') {
+			read_lexeme();
+			expression();
+			output("\tmov QWORD PTR [%s + %s * 8], %s\n", regname(2), regname(1), regname(0));
+			int tmp = cache[2];
+			cache[2] = cache[0];
+			cache[0] = tmp;
+			pop();
+			pop();
+			return;
+		}
+		output("\tmov %s, QWORD PTR [%s + %s * 8]\n", regname(1), regname(1), regname(0));
+		pop();
+	}
+	if(lexeme == '{') {
+		read_lexeme();
+		expression();
+		expect('}');
+		if(lexeme == '=') {
+			read_lexeme();
+			expression();
+			output("\tmov rcx, %s\n", regname(0));
+			output("\tmov BYTE PTR [%s + %s], cl\n", regname(2), regname(1));
+			int tmp = cache[2];
+			cache[2] = cache[0];
+			cache[0] = tmp;
+			pop();
+			pop();
+			return;
+		}
+		output("\tmov cl, BYTE PTR [%s + %s]\n", regname(1), regname(0));
+		output("\tmovzx %s, cl\n", regname(1));
+		pop();
+	}
 
 }
 
