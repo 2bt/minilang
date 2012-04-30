@@ -232,13 +232,6 @@ space:
 void read_lexeme() { lexeme = scan(); }
 
 
-void init_scanner() {
-	line_number = 1;
-	read_char();
-	read_lexeme();
-}
-
-
 void expect(int l) {
 	if(lexeme != l) {
 		if(l < LEX_SIZE) error("%s expected", keywords[l]);
@@ -672,6 +665,7 @@ void statement() {
 		expect(LEX_BLOCK_END);
 		output("\tjmp .L%d\n", while_labels[while_level]);
 		output(".L%d:\n", while_labels[while_level] + 1);
+		while_level--;
 	}
 	else if(lexeme == LEX_BREAK) {
 		read_lexeme();
@@ -702,7 +696,9 @@ void statement() {
 
 
 void minilang() {
-	init_scanner();
+	line_number = 1;
+	read_char();
+	read_lexeme();
 
 	output("\t.intel_syntax noprefix\n");
 	output("\t.text\n");
