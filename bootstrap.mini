@@ -1,10 +1,12 @@
-var	src_file
-var dst_file
+# minilang compiler in minilang
 
-var line_number
-var cursor_pos
+var	src_file, dst_file
+var line_number, cursor_pos
 
-var character
+var character, lexeme
+var token
+var number, is_negative
+var brackets, block, indent, newline, asm_active
 
 error(msg, a1, a2, a3, a4):
 	fprintf(stderr, "%d:%d: error: ", line_number, cursor_pos)
@@ -27,9 +29,175 @@ read_char():
 		cursor_pos = 0
 	return c
 
+var keywords
+
+# lexemes:
+# --------
+# asm		a
+# if		i
+# else		l
+# elif		f
+# while		w
+# break		b
+# continue	c
+# return	r
+# var		v
+# BLOCK_END	e
+# CHAR		C
+# STRING	S
+# NUMBER	N
+# IDENT		I
+# ASM_LINE	A
+# <=		L
+# >=		M
+# ==		E
+# !=		T
+# EOF		0
+
+
+scan():
+	var i
+
+	while 1:
+		# whitespace
+		while isspace(character):
+			if newline:
+				if character == ' ': indent = indent + 1
+				elif character == '\t': indent = (indent & -4) + 4
+			if character == '\n':
+				indent = 0
+				i = newline
+				newline = 1
+				if i == 0 & brackets == 0: return ';'
+			read_char()
+
+		# comment
+		if character == '#':
+			while character != '\n': read_char()
+		else: break
+
+	# indent
+	if indent > block: error("invalid indentation")
+	if indent < block:
+		asm_active = 0
+		block = block - 4
+		return 'E';
+
+	# asm line
+	if asm_active:
+		i = 0
+		while character != '\n':
+			token{i} = read_char()
+			i = i + 1
+		token{0} = '\0'
+		return 'A'
+
+	newline = 0
+
+	if character == ':':
+		block = block + 4
+		indent = indent + 4
+		return ':'
+
+	if strchr("-+*&|!=<>;:()[]{},", character):
+		i = read_char()
+		if strchr("<>=!", i) != 0 & character == '=':
+			read_char()
+			if i == '<': return 'L'
+			if i == '>': return 'M'
+			if i == '=': return 'E'
+			if i == '!': return 'T'
+		if i == '[' | i == '(': brackets = brackets + 1
+		elif i == ']' | i == ')': brackets = brackets - 1
+		if isdigit(character): is_negative = (i == '-')
+		return i
+
+	# char
+	if character == '\'':
+		token{0} = read_char()
+		i = 1
+		if character == '\\': token{1} = read_char(); i = 2
+		token{i} = read_char()
+		token{i + 1} = '\''
+		token{i + 2} = '\0'
+		if read_char() != '\'': error("bad character literal")
+		return 'C'
+
+	# string
+	if character == '"':
+		i = 0
+		while 1:
+			if character == '\\': token{i} = read_char(); i = i + 1
+			token{i} = read_char(); i = i + 1
+			if i > 1020: error("string too long")
+			if character == '"': break
+		token{i} = read_char()
+		token{i + 1} = '\0'
+		return 'S'
+
+
+	# number
+	if isdigit(character):
+		i = 0
+		while isdigit(character):
+			token{i} = read_char()
+			i = i + 1
+			if i > 20: error("number too long")
+		token{i} = '\0'
+		number = atoll(token)
+		return 'N'
+
+	# identifier/keyword
+	if isalpha(character) | character == '_':
+		token{0} = read_char()
+		i = 1
+		while isalnum(character) | character == '_':
+			token{i} = read_char()
+			i = i + 1
+			if i > 62: error("identifier too long")
+		token{i} = '\0'
+
+		# check for keyword
+		i = 0
+		while i < 9:
+			if strcmp(token, keywords[i]): return i
+			i = i + 1
+		return 'I'
+
+	if character != -1: error("unknown character")
+	if block > 0:
+		block = block - 4
+		return 'E'
+	return '0'
+
+
+
+read_lexeme(): lexeme = scan()
+
+
+expect(l):
+	if lexeme != l: error("read <%c>, but <%c> expected", l, lexeme)
+	read_lexeme()
 
 
 minilang():
+
+	token = malloc(1024)
+	keywords = malloc(9 * 4)
+	# "ailfwbcrv"
+	keywords[0] = "asm"
+	keywords[1] = "if"
+	keywords[2] = "else"
+	keywords[3] = "elif"
+	keywords[4] = "while"
+	keywords[5] = "break"
+	keywords[6] = "continue"
+	keywords[7] = "return"
+	keywords[8] = "var"
+
+	line_number = 1
+	read_char()
+	read_lexeme()
 
 
 main(argc, argv):
@@ -44,6 +212,9 @@ main(argc, argv):
 	else: dst_file = stdout
 
 	minilang()
+
+	fclose(src_file)
+	if dst_file != stdin: fclose(src_file)
 
 	return 0
 

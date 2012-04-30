@@ -144,8 +144,7 @@ space:
 	newline = 0;
 	// one character token
 	if(strchr("-+*/%&|~!=<>;:()[],@{}", character)) {
-		int c = character;
-		read_char();
+		int c = read_char();
 		if(c == ':') {	// new block
 			block += 4;
 			indent += 4;
@@ -222,7 +221,6 @@ space:
 	if(character != EOF) error("unknown character");
 	if(block > 0) {
 		block -= 4;
-		puts("ND");
 		return LEX_BLOCK_END;
 	}
 	return LEX_EOF;
