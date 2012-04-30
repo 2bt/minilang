@@ -19,44 +19,18 @@ error(msg, a1, a2, a3, a4):
 	exit(1)
 
 
-output(msg, a1, a2, a3, a4):
-	fprintf(dst_file, msg, a1, a2, a3, a4)
+output(msg, a1, a2, a3, a4): fprintf(dst_file, msg, a1, a2, a3, a4)
 
 
 read_char():
 	var c
 	c = character
 	character = fgetc(src_file)
-#	printf("<%c>\n", character)
 	cursor_pos = cursor_pos + 1
 	if character == '\n':
 		line_number = line_number + 1
 		cursor_pos = 0
 	return c
-
-
-# lexemes:
-# --------
-# asm		a
-# if		i
-# else		l
-# elif		f
-# while		w
-# break		b
-# continue	c
-# return	r
-# var		v
-# BLOCK_END	E
-# CHAR		C
-# STRING	S
-# NUMBER	N
-# IDENT		I
-# ASM_LINE	A
-# <=		L
-# >=		M
-# ==		Q
-# !=		T
-# EOF		0
 
 
 scan():
@@ -174,9 +148,7 @@ scan():
 	return '0'
 
 
-read_lexeme():
-	lexeme = scan()
-#	printf(" -> %c %s\n", lexeme, token)
+read_lexeme(): lexeme = scan()
 
 
 expect(l):
@@ -186,7 +158,7 @@ expect(l):
 
 # parser
 var local_count, local_names, local_offsets
-var cache, stack_size
+var cache, stack_size, frame
 var label, while_labels, while_level
 var regs, callregs
 
@@ -208,12 +180,14 @@ lookup_local():
 	return -1
 
 
-add_local(offset):
-	var i; i = 0
+add_local():
+	var i
+	frame = frame + 8
+	i = 0
 	while i < 256:
 		if i == local_count:
 			strcpy(local_names[i], token)
-			local_offsets[i] = offset
+			local_offsets[i] = frame
 			local_count = local_count + 1
 			return
 		if strcmp(token, local_names[i]) == 0: error("multiple declarations")
@@ -550,7 +524,7 @@ statement():
 
 
 minilang():
-	var i, frame, params
+	var i, params
 
 	# init scanner
 	token = malloc(1024)
@@ -592,14 +566,12 @@ minilang():
 	callregs[5] = "r9"
 	while_level = -1
 
-
-	# start
 	output("\t.intel_syntax noprefix\n")
 	output("\t.text\n")
 
 	while lexeme != '0':
-
-		while lexeme == 'v':  # global variables
+		# global variables
+		while lexeme == 'v':
 			read_lexeme()
 			expect('I')
 		    output("\t.comm %s, 8, 8\n", token)
@@ -626,15 +598,13 @@ minilang():
 		if lexeme == 'I':
 			params = params + 1
 			expect('I')
-			frame = frame + 8
-			add_local(frame)
+			add_local()
 			while lexeme == ',':
 				read_lexeme()
 				params = params + 1
 				if params > 6: error("too many arguments")
 				expect('I')
-				frame = frame + 8
-				add_local(frame)
+				add_local()
 		expect(')')
 		expect(':')
 
@@ -643,13 +613,11 @@ minilang():
 		while lexeme == 'v':
 			read_lexeme()
 			expect('I')
-			frame = frame + 8
-			add_local(frame)
+			add_local()
 			while lexeme == ',':
 				read_lexeme()
 				expect('I')
-				frame = frame + 8
-				add_local(frame)
+				add_local()
 			while lexeme == ';': read_lexeme()
 
 		if frame > 0: output("\tsub rsp, %d\n", frame)
