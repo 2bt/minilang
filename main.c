@@ -363,7 +363,7 @@ void expr_level_zero() {
 		read_lexeme();
 		push();
 		output("\tmov %s, %ld\n", regname(0), -number);
-		expr_level_zero(LEX_NUMBER);
+		read_lexeme();
 	}
 	else if(lexeme == LEX_NUMBER) {
 		push();
