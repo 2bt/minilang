@@ -1,10 +1,10 @@
 
 all:
-	c99 main.c -o minilang -g -Wall
+	c99 minilang.c -o minilang -g -Wall
 
 
-boot:
-	./minilang bootstrap.mini b.s
-	gcc b.s -o b
-	./b test.mini
-
+bootstrap: minilang
+	./minilang minilang.mini minilang.s
+	gcc minilang.s -o minilang_jr
+	./minilang_jr minilang.mini minilang_jr.s
+	diff minilang.s minilang_jr.s

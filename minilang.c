@@ -319,7 +319,7 @@ void pop() {
 			i++;
 		}
 		cache[i] = tmp;
-		if(stack_size >= cache_size) output("\tpop %s#pop\n", regs[i]);
+		if(stack_size >= cache_size) output("\tpop %s\n", regs[i]);
 	}
 }
 
@@ -389,14 +389,6 @@ void expr_level_zero() {
 
 		read_lexeme();
 		if(lexeme == '(') {	// function call
-			// TODO: save and restore cache
-/*			// push currently used registers
-			int used_regs = (stack_size > cache_size) ? cache_size : stack_size;
-			for(int i = used_regs - 1; i >= 0; i--)
-				output("\tpush %s\n", regs[cache[i]]);
-*/
-//			for(int i = 0; i < cache_size; i++) push();
-
 			// save used regs on stack
 			int i = stack_size;
 			if(i > cache_size) i = cache_size;
@@ -424,9 +416,6 @@ void expr_level_zero() {
 			}
 			expect(')');
 
-			// just checking...
-			assert(stack_size == 0);
-
 			// set-up registers
 			for(int i = args - 1; i >= 0; i--) {
 				output("\tpop %s\n", call_regs[i]);
@@ -436,23 +425,14 @@ void expr_level_zero() {
 			output("\txor rax, rax\n");
 			output("\tcall %s\n", name);
 
-			// return value in rax
-//			init_cache();
-//			push();
-//			stack_size = old_size + 1;
-
+			init_cache();
+			push();
 			stack_size = old_size + 1;
-			cache[0] = 3;
-			cache[1] = 0;
-			cache[2] = 1;
-			cache[3] = 2;
-
 			int m = stack_size;
 			if(m > cache_size) m = cache_size;
 			for(i = 1; i < m; i++) {
 				output("\tpop %s\n", regname(i));
 			}
-
 		}
 		else if(lexeme == '=') {
 			read_lexeme();
