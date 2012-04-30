@@ -27,6 +27,7 @@ read_char():
 	var c
 	c = character
 	character = fgetc(src_file)
+	printf("[%c]\n", character)
 	cursor_pos = cursor_pos + 1
 	if character == '\n':
 		line_number = line_number + 1
@@ -85,7 +86,7 @@ scan():
 		if indent < block:
 			asm_active = 0
 			block = block - 4
-			return 'E';
+			return 'E'
 
 	# asm line
 	if asm_active:
@@ -93,7 +94,7 @@ scan():
 		while character != '\n':
 			token{i} = read_char()
 			i = i + 1
-		token{0} = '\0'
+		token{i} = 0
 		return 'A'
 
 	newline = 0
@@ -123,7 +124,7 @@ scan():
 		if character == '\\': token{1} = read_char(); i = 2
 		token{i} = read_char()
 		token{i + 1} = '\''
-		token{i + 2} = '\0'
+		token{i + 2} = 0
 		if read_char() != '\'': error("bad character literal")
 		return 'C'
 
@@ -136,7 +137,7 @@ scan():
 			if i > 1020: error("string too long")
 			if character == '"': break
 		token{i} = read_char()
-		token{i + 1} = '\0'
+		token{i + 1} = 0
 		return 'S'
 
 	# number
@@ -146,31 +147,36 @@ scan():
 			token{i} = read_char()
 			i = i + 1
 			if i > 20: error("number too long")
-		token{i} = '\0'
+		token{i} = 0
 		number = atoll(token)
 		return 'N'
 
 	# identifier/keyword
 	if isalpha(character) | character == '_':
 		token{0} = read_char()
-		i = 1; while isalnum(character) | character == '_':
+		i = 1
+		while isalnum(character) | character == '_':
 			token{i} = read_char()
 			i = i + 1
 			if i > 62: error("identifier too long")
-		token{i} = '\0'
+		token{i} = 0
 
+		printf("'%s'\n", token)
 		# check for keyword
-		i = 0; while i < 9:
-			if strcmp(token, keywords[i]): return "ailfwbcrv"{i}
+		i = 0
+		while i < 9:
+			if strcmp(token, keywords[i]) == 0: return "ailfwbcrv"{i}
 			i = i + 1
 		return 'I'
 
 	if character != -1: error("unknown character")
-	if block > 0:block = block - 4; return 'E'
+	if block > 0: block = block - 4; return 'E'
 	return '0'
 
 
-read_lexeme(): lexeme = scan()
+read_lexeme():
+	lexeme = scan()
+	printf("<%c> %s\n", lexeme, token)
 
 
 expect(l):
@@ -188,21 +194,21 @@ regname(i): return regs[cache[i]]
 
 
 init_cache():
-	var i
-	i = 0; while i < 4: cache[i] = i
+	var i; i = 0
+	while i < 4: cache[i] = i
 	stack_size = 0
 
 
 lookup_local():
-	var i
-	i = 0; while i < local_count:
+	var i; i = 0
+	while i < local_count:
 		if strcmp(token, local_names[i]) == 0: return i
 	return -1
 
 
 add_local(offset):
-	var i
-	i = 0; while i < 256:
+	var i; i = 0
+	while i < 256:
 		if i < local_count:
 			strcpy(local_names[i], token)
 			local_offsets[i] = offset
@@ -527,7 +533,7 @@ minilang():
 
 	# init scanner
 	token = malloc(1024)
-	keywords = malloc(9 * 4)
+	keywords = malloc(8 * 9)
 	keywords[0] = "asm"
 	keywords[1] = "if"
 	keywords[2] = "else"
@@ -543,7 +549,10 @@ minilang():
 
 	# init parser
 	local_names = malloc(8 * 256)
-	i = 0; while i < 256:local_names = malloc(64)
+	i = 0
+	while i < 256:
+		local_names[i] = malloc(64)
+		i = i + 1
 	regs = malloc(8 * 4)
 	regs[0] = "r8"
 	regs[1] = "r9"
@@ -562,16 +571,18 @@ minilang():
 	output("\t.intel_syntax noprefix\n")
 	output("\t.text\n")
 
+
 	while lexeme != '0':
 
 		while lexeme == 'v':  # global variables
+			printf("abc")
 			read_lexeme()
 			expect('I')
-		    output("\t.comm %s, 4, 4\n", token)
+		    output("\t.comm %s, 8, 8\n", token)
 			while lexeme == ',':
 				read_lexeme()
 				expect('I')
-    			output("\t.comm %s, 4, 4\n", token)
+    			output("\t.comm %s, 8, 8\n", token)
 			while lexeme == ';': read_lexeme()
 
 		expect('I')
@@ -629,12 +640,13 @@ minilang():
 
 
 main(argc, argv):
+	var s
 
 	if argc < 2 | argc > 3:
 		printf("usuage: %s <source> [output]\n", argv[0])
 		exit(0)
 
-	src_file = fopen(argv[1], "r")
+	src_file = s = fopen(argv[1], "r")
 	if !src_file: error("opening source file failed")
 	if argc == 3: dst_file = fopen(argv[2], "w")
 	else: dst_file = stdout
@@ -642,7 +654,7 @@ main(argc, argv):
 	minilang()
 
 	fclose(src_file)
-	if dst_file != stdin: fclose(src_file)
+	if dst_file != stdin: fclose(dst_file)
 
 	return 0
 

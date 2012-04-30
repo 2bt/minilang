@@ -386,7 +386,7 @@ void expr_level_zero() {
 		char name[64];
 		strcpy(name, token);
 		Variable* v = lookup_local();
-		
+
 		read_lexeme();
 		if(lexeme == '(') {	// function call
 			// TODO: save and restore cache
@@ -397,6 +397,10 @@ void expr_level_zero() {
 */
 //			for(int i = 0; i < cache_size; i++) push();
 
+			// save used regs on stack
+			int i = stack_size;
+			if(i > cache_size) i = cache_size;
+			while(i-- > 0) output("\tpush %s\n", regname(i));
 
 			int old_size = stack_size;
 			stack_size = 0;
@@ -423,19 +427,31 @@ void expr_level_zero() {
 			// just checking...
 			assert(stack_size == 0);
 
-			// set up registers
+			// set-up registers
 			for(int i = args - 1; i >= 0; i--) {
 				output("\tpop %s\n", call_regs[i]);
 			}
-			output("\txor rax, rax\n");
 
 			// call
+			output("\txor rax, rax\n");
 			output("\tcall %s\n", name);
 
 			// return value in rax
-			init_cache();
-			push();
+//			init_cache();
+//			push();
+//			stack_size = old_size + 1;
+
 			stack_size = old_size + 1;
+			cache[0] = 3;
+			cache[1] = 0;
+			cache[2] = 1;
+			cache[3] = 2;
+
+			int m = stack_size;
+			if(m > cache_size) m = cache_size;
+			for(i = 1; i < m; i++) {
+				output("\tpop %s\n", regname(i));
+			}
 
 		}
 		else if(lexeme == '=') {
@@ -709,11 +725,11 @@ void minilang() {
 		while(lexeme == LEX_VAR) {
 			read_lexeme();
 			expect(LEX_IDENT);
-		    output("\t.comm %s, 4, 4\n", token);
+		    output("\t.comm %s, 8, 8\n", token);
 			while(lexeme == ',') {
 				read_lexeme();
 				expect(LEX_IDENT);
-    			output("\t.comm %s, 4, 4\n", token);
+    			output("\t.comm %s, 8, 8\n", token);
 			}
 			while(lexeme == ';') read_lexeme();
 		}
