@@ -1,14 +1,12 @@
 
-
 main(argc, argv):
 	var x, a
 
-	a = "Hallo"
 	x = 0
+	a = "hallo"
 	while a{x}:
 		printf("<%c>\n", a{x})
 		x = x + 1
-
 
 	x = 0
 	while x < argc:

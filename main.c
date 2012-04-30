@@ -269,35 +269,25 @@ void init_cache() {
 }
 
 
-Variable* lookup_variable(char* name, Variable* table, int size) {
-	for(int i = 0; i < size; i++) {
-		if(strcmp(name, table[i].name) == 0) return &table[i];
+Variable* lookup_local() {
+	for(int i = 0; i < local_count; i++) {
+		if(strcmp(token, locals[i].name) == 0) return &locals[i];
 	}
 	return NULL;
 }
 
 
-Variable* lookup_local(char* name) {
-	return lookup_variable(name, locals, local_count);
-}
-
-
-void add_variable(char* name, int offset, Variable* table, int size) {
+void add_local(int offset) {
 	for(int i = 0; i < 1024; i++) {
-		if(i == size) {
-			strcpy(table[i].name, name);
-			table[i].offset = offset;
+		if(i == local_count) {
+			strcpy(locals[i].name, token);
+			locals[i].offset = offset;
+			local_count++;
 			return;
 		}
-		if(strcmp(name, table[i].name) == 0) error("multiple declarations");
+		if(strcmp(token, locals[i].name) == 0) error("multiple declarations");
 	}
 	error("too many variables");
-}
-
-
-void add_local(char* name, int offset) {
-	add_variable(name, offset, locals, local_count);
-	local_count++;
 }
 
 
@@ -384,13 +374,12 @@ void expr_level_zero() {
 		expect(')');
 	}
 	else if(lexeme == LEX_IDENT) {
-		Variable* v = lookup_local(token);
-
+		char name[64];
+		strcpy(name, token);
+		Variable* v = lookup_local();
+		
 		read_lexeme();
 		if(lexeme == '(') {	// function call
-			char name[64];
-			strcpy(name, token);
-
 			// TODO: save and restore cache
 /*			// push currently used registers
 			int used_regs = (stack_size > cache_size) ? cache_size : stack_size;
@@ -441,15 +430,19 @@ void expr_level_zero() {
 
 		}
 		else if(lexeme == '=') {
-			if(!v) error("variable not found");
 			read_lexeme();
 			expression();
-			output("\tmov QWORD PTR [rbp - %d], %s\n", v->offset, regname(0));
+			if(!v)
+				output("\tmov %s, %s\n", name, regname(0));
+			else
+				output("\tmov QWORD PTR [rbp - %d], %s\n", v->offset, regname(0));
 		}
 		else {
-			if(!v) error("variable not found");
 			push();
-			output("\tmov %s, QWORD PTR [rbp - %d]\n", regname(0), v->offset);
+			if(!v)
+				output("\tmov %s, %s\n", regname(0), name);
+			else
+				output("\tmov %s, QWORD PTR [rbp - %d]\n", regname(0), v->offset);
 		}
 	}
 	else if(lexeme == '@') {
@@ -699,10 +692,21 @@ void minilang() {
 	output("\t.text\n");
 
 	while(lexeme != LEX_EOF) {
+
+		// global variables
+		while(lexeme == LEX_VAR) {
+			read_lexeme();
+			expect(LEX_IDENT);
+		    output("\t.comm %s, 4, 4\n", token);
+			while(lexeme == ',') {
+				read_lexeme();
+				expect(LEX_IDENT);
+    			output("\t.comm %s, 4, 4\n", token);
+			}
+			while(lexeme == ';') read_lexeme();
+		}
+
 		expect(LEX_IDENT);
-
-
-		// only functions in global scope for now
 		output("\t.globl %s\n", token);
 		output("%s:\n", token);
 		output("\tpush rbp\n");
@@ -718,14 +722,14 @@ void minilang() {
 			params++;
 			expect(LEX_IDENT);
 			frame += 8;
-			add_local(token, frame);
+			add_local(frame);
 			while(lexeme == ',') {
 				read_lexeme();
 				params++;
 				if(params > 6) error("too many arguments");
 				expect(LEX_IDENT);
 				frame += 8;
-				add_local(token, frame);
+				add_local(frame);
 			}
 		}
 		expect(')');
@@ -737,12 +741,12 @@ void minilang() {
 			read_lexeme();
 			expect(LEX_IDENT);
 			frame += 8;
-			add_local(token, frame);
+			add_local(frame);
 			while(lexeme == ',') {
 				read_lexeme();
 				expect(LEX_IDENT);
 				frame += 8;
-				add_local(token, frame);
+				add_local(frame);
 			}
 			while(lexeme == ';') read_lexeme();
 		}
@@ -780,7 +784,7 @@ int main(int argc, char** argv) {
 
 	if(argc == 3) {
 		dst_file = fopen(argv[2], "w");
-		if(!src_file) error("opening output file failed");
+		if(!dst_file) error("opening output file failed");
 	}
 	else dst_file = stdout;
 	atexit(cleanup);
