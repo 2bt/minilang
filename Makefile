@@ -4,6 +4,13 @@ all:
 
 
 test:
-	./minilang test.mini test.s
-	gcc test.s
+	./minilang test.mini s.s
+	gcc s.s
 	./a.out
+
+
+boot:
+	./minilang bootstrap.mini s.s
+	gcc s.s
+	./a.out
+

@@ -165,7 +165,18 @@ space:
 		return c;
 	}
 
-	// TODO: char
+	// char
+	if(character == '\'') {
+		read_char();
+		token[0] = '\'';
+		int i = 1;
+		if(character == '\\') token[i++] = read_char();
+		token[i++] = read_char();
+		token[i++] = '\'';
+		token[i] = '\0';
+		if(read_char() != '\'') error("bad character literal");
+		return LEX_CHAR;
+	}
 
 	// string
 	if(character == '"') {
@@ -322,7 +333,7 @@ void pop() {
 
 int is_expr_beginning() {
 	static const int lexemes[] = {
-		'-', '!', '(', LEX_NUMBER, LEX_STRING, LEX_IDENT
+		'-', '!', '(', LEX_NUMBER, LEX_CHAR, LEX_STRING, LEX_IDENT
 	};
 	for(int i = 0; i < sizeof(lexemes) / sizeof(int); i++)
 		if(lexeme == lexemes[i]) return 1;
@@ -366,6 +377,11 @@ void expr_level_zero() {
 	else if(lexeme == LEX_NUMBER) {
 		push();
 		output("\tmov %s, %ld\n", regname(0), number);
+		read_lexeme();
+	}
+	else if(lexeme == LEX_CHAR) {
+		push();
+		output("\tmov %s, %s\n", regname(0), token);
 		read_lexeme();
 	}
 	else if(lexeme == '(') {
