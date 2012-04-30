@@ -123,11 +123,13 @@ space:
 	}
 
 	// indent
-	if(indent > block) error("invalid indentation");
-	if(indent < block) {
-		asm_active = 0;
-		block -= 4;
-		return LEX_BLOCK_END;
+	if(!brackets) {
+		if(indent > block) error("invalid indentation");
+		if(indent < block) {
+			asm_active = 0;
+			block -= 4;
+			return LEX_BLOCK_END;
+		}
 	}
 
 	// asm line

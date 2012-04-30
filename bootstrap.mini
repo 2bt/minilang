@@ -1,12 +1,16 @@
 # minilang compiler in minilang
 
-var	src_file, dst_file
-var line_number, cursor_pos
 
+var	src_file, dst_file
+
+# scanner
+var line_number, cursor_pos
 var character, lexeme
 var token
 var number, is_negative
 var brackets, block, indent, newline, asm_active
+var keywords
+
 
 error(msg, a1, a2, a3, a4):
 	fprintf(stderr, "%d:%d: error: ", line_number, cursor_pos)
@@ -29,7 +33,6 @@ read_char():
 		cursor_pos = 0
 	return c
 
-var keywords
 
 # lexemes:
 # --------
@@ -42,7 +45,7 @@ var keywords
 # continue	c
 # return	r
 # var		v
-# BLOCK_END	e
+# BLOCK_END	E
 # CHAR		C
 # STRING	S
 # NUMBER	N
@@ -50,7 +53,7 @@ var keywords
 # ASM_LINE	A
 # <=		L
 # >=		M
-# ==		E
+# ==		Q
 # !=		T
 # EOF		0
 
@@ -77,11 +80,12 @@ scan():
 		else: break
 
 	# indent
-	if indent > block: error("invalid indentation")
-	if indent < block:
-		asm_active = 0
-		block = block - 4
-		return 'E';
+	if !brackets:
+		if indent > block: error("invalid indentation")
+		if indent < block:
+			asm_active = 0
+			block = block - 4
+			return 'E';
 
 	# asm line
 	if asm_active:
@@ -105,7 +109,7 @@ scan():
 			read_char()
 			if i == '<': return 'L'
 			if i == '>': return 'M'
-			if i == '=': return 'E'
+			if i == '=': return 'Q'
 			if i == '!': return 'T'
 		if i == '[' | i == '(': brackets = brackets + 1
 		elif i == ']' | i == ')': brackets = brackets - 1
@@ -135,7 +139,6 @@ scan():
 		token{i + 1} = '\0'
 		return 'S'
 
-
 	# number
 	if isdigit(character):
 		i = 0
@@ -150,26 +153,21 @@ scan():
 	# identifier/keyword
 	if isalpha(character) | character == '_':
 		token{0} = read_char()
-		i = 1
-		while isalnum(character) | character == '_':
+		i = 1; while isalnum(character) | character == '_':
 			token{i} = read_char()
 			i = i + 1
 			if i > 62: error("identifier too long")
 		token{i} = '\0'
 
 		# check for keyword
-		i = 0
-		while i < 9:
-			if strcmp(token, keywords[i]): return i
+		i = 0; while i < 9:
+			if strcmp(token, keywords[i]): return "ailfwbcrv"{i}
 			i = i + 1
 		return 'I'
 
 	if character != -1: error("unknown character")
-	if block > 0:
-		block = block - 4
-		return 'E'
+	if block > 0:block = block - 4; return 'E'
 	return '0'
-
 
 
 read_lexeme(): lexeme = scan()
@@ -180,11 +178,356 @@ expect(l):
 	read_lexeme()
 
 
-minilang():
+# parser
+var local_count, local_names, local_offsets
+var cache, cache_size, stack_size
+var label, while_labels, while_level
+var regs, callregs
 
+regname(i): return regs[cache[i]]
+
+
+init_cache():
+	var i
+	i = 0; while i < 4: cache[i] = i
+	stack_size = 0
+
+
+lookup_local():
+	var i
+	i = 0; while i < local_count:
+		if strcmp(token, local_names[i]) == 0: return i
+	return -1
+
+
+add_local(offset):
+	var i
+	i = 0; while i < 256:
+		if i < local_count:
+			strcpy(local_names[i], token)
+			local_offsets[i] = offset
+			local_count = local_count + 1
+			return
+		if strcmp(token, local_names[i]) == 0: error("multiple declarations")
+	error("too many variables")
+
+
+push():
+	var i, tmp
+	i = 3
+	tmp = cache[i]
+	if stack_size >= 4: output("tpush %s\n", regs[tmp])
+	while i > 0:
+		cache[i] = cache[i - 1]
+		i = i - 1
+	cache[0] = tmp
+	stack_size = stack_size + 1
+
+
+pop():
+	var i, tmp
+	stack_size = stack_size - 1
+	if stack_size == 0: init_cache()
+	else:
+		i = 0
+		tmp = cache[0]
+		while i < 3:
+			cache[i] = cache[i + 1]
+			i = i + 1
+		cache[i] = tmp
+		if stack_size >= 4: output("\tpop %s\n", regs[i])
+
+
+is_expr_beginning(): return strchr("-!(NCSI") != 0
+is_stmt_beginning(): return is_expr_beginning() | strchr("aiwbcr;") != 0
+
+
+expr_0():
+	var i, v, s, name
+	if lexeme = '!':
+		read_lexeme()
+		expr_0()
+		output("\ttest %s, %s\n", regname(0), regname(0))
+		output("\tsetz cl\n")
+		output("\tmovzx %s, cl\n", regname(0))
+		return
+	if lexeme == '-':
+		if !is_negative:
+			read_lexeme()
+			expr_0()
+			output("\tneg %s\n", regname(0))
+			return
+		read_lexeme()
+		push()
+		output("\tmov %s, %ld\n", regname(0), -number)
+		read_lexeme()
+	elif lexeme == 'N':
+		push()
+		output("\tmov %s, %ld\n", regname(0), number)
+		read_lexeme()
+	elif lexeme == 'C':
+		push()
+		output("\tmov %s, %s\n", regname(0), token)
+		read_lexeme()
+	elif lexeme == '(':
+		read_lexeme()
+		expression()
+		expect(')')
+	elif lexeme = 'I':
+		name = malloc(64)
+		strcpy(name, token)
+		v = lookup_local()
+		read_lexeme()
+
+		if lexeme == '(': # function call
+			s = stack_size
+			stack_size = 0
+
+			read_lexeme()
+			i = 0
+			if is_expr_beginning():
+				i = i + 1
+				expression()
+				output("\tpush %s\n", regname(0))
+				pop()
+				while lexeme == ',':
+					read_lexeme()
+					i = i + 1
+					if i > 6: error("too many arguments")
+					expression()
+					output("\tpush %s\n", regname(0))
+					pop()
+			expect(')')
+
+			# set up registers
+			while i > 0:
+				i = i - 1
+				output("\tpop %s\n", callregs[i])
+			output("\txor rax, rax\n")
+			output("\tcall %s\n", name)
+
+			# return value in rax
+			init_cache()
+			push()
+			stack_size = s + 1
+		elif lexeme == '=': # assignment
+			read_lexeme()
+			expression()
+			if v < 0: output("\tmov %s, %s\n", name, regname(0))
+			else: output("\tmov QWORD PTR [rbp - %d], %s\n",
+					local_offsets[v], regname(0))
+		else:
+			push()
+			if v < 0: output("\tmov %s, %s\n", regname(0), name)
+			else: output("\tmov %s, QWORD PTR [rbp - %d]\n",
+					regname(0), local_offsets[v])
+		free(name)
+
+	elif lexeme == 'S': # string literal
+		push()
+		output("\t.section .rodata\n")
+		output("LC%d:\n", label)
+		output("\t.string %s\n", token)
+		output("\t.text\n")
+		output("\tmov %s, OFFSET LC%d\n", regname(0), label)
+		label = label + 1
+		read_lexeme()
+	else: error("bad expression")
+
+	while lexeme == '[':
+		read_lexeme()
+		expression()
+		expect(']')
+		if lexeme == '=':
+			read_lexeme()
+			expression()
+			output("\tmov QWORD PTR [%s + %s * 8], %s\n",
+					regname(2), regname(1), regname(0))
+			i = cache[2]
+			cache[2] = cache[0]
+			cache[0] = i
+			pop()
+			pop()
+			return
+		output("\tmov %s, QWORD PTR [%s + %s * 8]\n",
+				regname(1), regname(1), regname(0))
+		pop()
+
+	if lexeme == '{':
+		read_lexeme()
+		expression()
+		expect('}')
+		if lexeme == '=':
+			read_lexeme()
+			expression()
+			output("\tmov rcx, %s\n", regname(0))
+			output("\tmov BYTE PTR [%s + %s], cl\n", regname(2), regname(1))
+			i = cache[2]
+			cache[2] = cache[0]
+			cache[0] = i
+			pop()
+			pop()
+			return
+
+		output("\tmov cl, BYTE PTR [%s + %s]\n", regname(1), regname(0))
+		output("\tmovzx %s, cl\n", regname(1))
+		pop()
+
+
+expr_1():
+	expr_0()
+	while lexeme == '*':
+		read_lexeme()
+		expr_0()
+		output("\timul %s, %s\n", regname(1), regname(0))
+		pop()
+
+
+expr_2():
+	expr_1()
+	while strchr("+-", lexeme):
+		if lexeme == '+':
+			read_lexeme()
+			expr_1()
+			output("\tadd %s, %s\n", regname(1), regname(0))
+			pop()
+		elif lexeme == '-':
+			read_lexeme()
+			expr_1()
+			output("\tsub %s, %s\n", regname(1), regname(0))
+			pop()
+
+
+expr_3():
+	var c
+	expr_2()
+	if lexeme == '<': c = "l"
+	elif lexeme == '>': c = "g"
+	elif lexeme == 'L': c = "le"
+	elif lexeme == 'M': c = "ge"
+	elif lexeme == 'Q': c = "e"
+	elif lexeme == 'T': c = "ne"
+	else: return
+	read_lexeme()
+	expr_2()
+	output("\tcmp %s, %s\n", regname(1), regname(0))
+	output("\tset%s cl\n", c)
+	output("\tmovzx %s, cl\n", regname(1))
+	pop()
+
+
+expr_4():
+	expr_3()
+	while lexeme == '&':
+		read_lexeme()
+		expr_3()
+		output("\tand %s, %s\n", regname(1), regname(0))
+		pop()
+
+
+expression():
+	expr_4()
+	while lexeme == '|':
+		read_lexeme()
+		expr_4()
+		output("\tor %s, %s\n", regname(1), regname(0))
+		pop()
+
+
+statement_list(): while is_stmt_beginning(): statement()
+
+
+statement():
+	var l_end, l_next, end
+	if lexeme == 'a':
+		read_lexeme()
+		asm_active = 1
+		newline = 1
+		expect(':')
+		while lexeme == 'A':
+			output("\t%s\n", token)
+			read_lexeme()
+		expect('E')
+	elif lexeme == 'i':
+		read_lexeme()
+		expression()
+		expect(':')
+		l_end = label
+		l_next = label + 1
+		label = label + 2
+		end = 0
+		output("\ttest %s, %s\n", regname(0), regname(0))
+		output("\tjz .L%d\n", l_next)
+		init_cache()
+		statement_list()
+		expect('E')
+		if strchr("lf", lexeme):
+			output("\tjmp .L%d\n", l_end)
+			end = 1
+		output(".L%d:\n", l_next)
+		while lexeme == 'f':
+			read_lexeme()
+			expression()
+			expect(':')
+			l_next = label
+			label = label + 1
+			output("\ttest %s, %s\n", regname(0), regname(0))
+			output("\tjz .L%d\n", l_next)
+			statement_list()
+			expect('e')
+			if strchr("lf", lexeme): output("\tjmp .L%d\n", l_end)
+			output(".L%d:\n", l_next)
+		if lexeme == 'l':
+			read_lexeme()
+			expect(':')
+			statement_list()
+			expect('E')
+		if end: output(".L%d:\n", l_end)
+	elif lexeme == 'w':
+		read_lexeme()
+		while_level = while_level + 1
+		if while_level == 256: error("while nesting limit exceeded")
+		while_labels[while_level] = label
+		label = label + 2
+		output(".L%d:\n", while_labels[while_level])
+		expression()
+		expect(':')
+		output("\ttest %s, %s\n", regname(0), regname(0))
+		output("\tjz .L%d\n", while_labels[while_level] + 1)
+		init_cache()
+		statement_list()
+		expect('E')
+		output("\tjmp .L%d\n", while_labels[while_level])
+		output(".L%d:\n", while_labels[while_level] + 1)
+		while_level = while_level - 1
+	elif lexeme == 'b':
+		read_lexeme()
+		if while_level < 0: error("break without while")
+		output("\tjmp .L%d\n", while_labels[while_level] + 1)
+	elif lexeme == 'c':
+		read_lexeme()
+		if while_level < 0: error("continue without while")
+		output("\tjmp .L%d\n", while_labels[while_level])
+	elif lexeme == 'r':
+		read_lexeme()
+		if is_expr_beginning():
+			expression()
+			if strcmp(regname(0), "rax") != 0:
+				output("\tmov rax, %s\n", regname(0))
+		output("\tleave\n")
+		output("\tret\n")
+	elif is_expr_beginning():
+		expression()
+		pop()
+	else: expect(';')
+
+
+minilang():
+	var i, frame, params
+
+	# init scanner
 	token = malloc(1024)
 	keywords = malloc(9 * 4)
-	# "ailfwbcrv"
 	keywords[0] = "asm"
 	keywords[1] = "if"
 	keywords[2] = "else"
@@ -194,10 +537,95 @@ minilang():
 	keywords[6] = "continue"
 	keywords[7] = "return"
 	keywords[8] = "var"
-
 	line_number = 1
 	read_char()
 	read_lexeme()
+
+	# init parser
+	local_names = malloc(8 * 256)
+	i = 0; while i < 256:local_names = malloc(64)
+	regs = malloc(8 * 4)
+	regs[0] = "r8"
+	regs[1] = "r9"
+	regs[2] = "r11"
+	regs[3] = "rax"
+	callregs = malloc(8 * 6)
+	callregs[0] = "rdi"
+	callregs[1] = "rsi"
+	callregs[2] = "rdx"
+	callregs[3] = "rcx"
+	callregs[4] = "r8"
+	callregs[5] = "r9"
+	while_level = -1
+
+	# start
+	output("\t.intel_syntax noprefix\n")
+	output("\t.text\n")
+
+	while lexeme != '0':
+
+		while lexeme == 'v':  # global variables
+			read_lexeme()
+			expect('I')
+		    output("\t.comm %s, 4, 4\n", token)
+			while lexeme == ',':
+				read_lexeme()
+				expect('I')
+    			output("\t.comm %s, 4, 4\n", token)
+			while lexeme == ';': read_lexeme()
+
+		expect('I')
+		output("\t.globl %s\n", token)
+		output("%s:\n", token)
+		output("\tpush rbp\n")
+		output("\tmov rbp, rsp\n")
+
+		frame = 0
+		local_count = 0
+
+		# parameter list
+		params = 0
+		expect('(')
+		if lexeme == 'I':
+			params = params + 1
+			expect('I')
+			frame = frame + 8
+			add_local(frame)
+			while lexeme == ',':
+				read_lexeme()
+				params = params + 1
+				if params > 6: error("too many arguments")
+				expect('I')
+				frame = frame + 8
+				add_local(frame)
+		expect(')')
+		expect(':')
+
+		# local variables
+		while lexeme == ';': read_lexeme()
+		while lexeme == 'v':
+			read_lexeme()
+			expect('I')
+			frame = frame + 8
+			add_local(frame)
+			while lexeme == ',':
+				read_lexeme()
+				expect('I')
+				frame = frame + 8
+				add_local(frame)
+			while lexeme == ';': read_lexeme()
+
+		if frame > 0: output("\tsub rsp, %d\n", frame)
+		i = 0
+		while i < params:
+			output("\tmov QWORD PTR [rbp - %d], %s\n", i * 8 + 8, callregs[i])
+			i = i + 1
+
+		init_cache()
+		statement_list()
+		output("\tleave\n")
+		output("\tret\n")
+		expect('0')
 
 
 main(argc, argv):
