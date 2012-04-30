@@ -319,7 +319,7 @@ void pop() {
 			i++;
 		}
 		cache[i] = tmp;
-		if(stack_size >= cache_size) output("\tpop %s\n", regs[i]);
+		if(stack_size >= cache_size) output("\tpop %s#pop\n", regs[i]);
 	}
 }
 
@@ -651,6 +651,7 @@ void statement() {
 			l_next = label++;
 			output("\ttest %s, %s\n", regname(0), regname(0));
 			output("\tjz .L%d\n", l_next);
+			init_cache();
 			statement_list();
 			expect(LEX_BLOCK_END);
 			if(lexeme == LEX_ELIF || lexeme == LEX_ELSE)
@@ -660,6 +661,7 @@ void statement() {
 		if(lexeme == LEX_ELSE) {
 			read_lexeme();
 			expect(':');
+			init_cache();
 			statement_list();
 			expect(LEX_BLOCK_END);
 		}
@@ -699,6 +701,7 @@ void statement() {
 			expression();
 			if(strcmp(regname(0), "rax") != 0)
 				output("\tmov rax, %s\n", regname(0));
+			pop();
 		}
 		output("\tleave\n");
 		output("\tret\n");

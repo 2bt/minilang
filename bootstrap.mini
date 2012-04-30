@@ -27,7 +27,6 @@ read_char():
 	var c
 	c = character
 	character = fgetc(src_file)
-	printf("[%c]\n", character)
 	cursor_pos = cursor_pos + 1
 	if character == '\n':
 		line_number = line_number + 1
@@ -100,11 +99,12 @@ scan():
 	newline = 0
 
 	if character == ':':
+		read_char()
 		block = block + 4
 		indent = indent + 4
 		return ':'
 
-	if strchr("-+*&|!=<>;:()[]{},", character):
+	if strchr("-+*&|!=<>;()[]{},", character):
 		i = read_char()
 		if strchr("<>=!", i) != 0 & character == '=':
 			read_char()
@@ -161,7 +161,6 @@ scan():
 			if i > 62: error("identifier too long")
 		token{i} = 0
 
-		printf("'%s'\n", token)
 		# check for keyword
 		i = 0
 		while i < 9:
@@ -169,14 +168,12 @@ scan():
 			i = i + 1
 		return 'I'
 
-	if character != -1: error("unknown character")
+	if character < 0: error("unknown character")
 	if block > 0: block = block - 4; return 'E'
 	return '0'
 
 
-read_lexeme():
-	lexeme = scan()
-	printf("<%c> %s\n", lexeme, token)
+read_lexeme(): lexeme = scan()
 
 
 expect(l):
@@ -186,16 +183,17 @@ expect(l):
 
 # parser
 var local_count, local_names, local_offsets
-var cache, cache_size, stack_size
+var cache, stack_size
 var label, while_labels, while_level
 var regs, callregs
+
 
 regname(i): return regs[cache[i]]
 
 
 init_cache():
 	var i; i = 0
-	while i < 4: cache[i] = i
+	while i < 4: cache[i] = i; i = i + 1
 	stack_size = 0
 
 
@@ -203,13 +201,14 @@ lookup_local():
 	var i; i = 0
 	while i < local_count:
 		if strcmp(token, local_names[i]) == 0: return i
+		i = i + 1
 	return -1
 
 
 add_local(offset):
 	var i; i = 0
 	while i < 256:
-		if i < local_count:
+		if i == local_count:
 			strcpy(local_names[i], token)
 			local_offsets[i] = offset
 			local_count = local_count + 1
@@ -244,13 +243,13 @@ pop():
 		if stack_size >= 4: output("\tpop %s\n", regs[i])
 
 
-is_expr_beginning(): return strchr("-!(NCSI") != 0
-is_stmt_beginning(): return is_expr_beginning() | strchr("aiwbcr;") != 0
+is_expr_beginning(): return strchr("-!(NCSI", lexeme) != 0
+is_stmt_beginning(): return is_expr_beginning() | strchr("aiwbcr;", lexeme) != 0
 
 
 expr_0():
 	var i, v, s, name
-	if lexeme = '!':
+	if lexeme == '!':
 		read_lexeme()
 		expr_0()
 		output("\ttest %s, %s\n", regname(0), regname(0))
@@ -279,7 +278,7 @@ expr_0():
 		read_lexeme()
 		expression()
 		expect(')')
-	elif lexeme = 'I':
+	elif lexeme == 'I':
 		name = malloc(64)
 		strcpy(name, token)
 		v = lookup_local()
@@ -479,6 +478,7 @@ statement():
 			label = label + 1
 			output("\ttest %s, %s\n", regname(0), regname(0))
 			output("\tjz .L%d\n", l_next)
+			init_cache()
 			statement_list()
 			expect('e')
 			if strchr("lf", lexeme): output("\tjmp .L%d\n", l_end)
@@ -486,6 +486,7 @@ statement():
 		if lexeme == 'l':
 			read_lexeme()
 			expect(':')
+			init_cache()
 			statement_list()
 			expect('E')
 		if end: output(".L%d:\n", l_end)
@@ -520,6 +521,7 @@ statement():
 			expression()
 			if strcmp(regname(0), "rax") != 0:
 				output("\tmov rax, %s\n", regname(0))
+			pop()
 		output("\tleave\n")
 		output("\tret\n")
 	elif is_expr_beginning():
@@ -544,11 +546,15 @@ minilang():
 	keywords[7] = "return"
 	keywords[8] = "var"
 	line_number = 1
+	newline = 1
 	read_char()
 	read_lexeme()
 
 	# init parser
+	while_labels = malloc(8 * 256)
+	cache = malloc(8 * 4)
 	local_names = malloc(8 * 256)
+	local_offsets = malloc(8 * 256)
 	i = 0
 	while i < 256:
 		local_names[i] = malloc(64)
@@ -567,15 +573,14 @@ minilang():
 	callregs[5] = "r9"
 	while_level = -1
 
+
 	# start
 	output("\t.intel_syntax noprefix\n")
 	output("\t.text\n")
 
-
 	while lexeme != '0':
 
 		while lexeme == 'v':  # global variables
-			printf("abc")
 			read_lexeme()
 			expect('I')
 		    output("\t.comm %s, 8, 8\n", token)
@@ -585,6 +590,8 @@ minilang():
     			output("\t.comm %s, 8, 8\n", token)
 			while lexeme == ';': read_lexeme()
 
+
+		# function definition
 		expect('I')
 		output("\t.globl %s\n", token)
 		output("%s:\n", token)
@@ -636,25 +643,20 @@ minilang():
 		statement_list()
 		output("\tleave\n")
 		output("\tret\n")
-		expect('0')
+		expect('E')
 
 
 main(argc, argv):
 	var s
-
 	if argc < 2 | argc > 3:
 		printf("usuage: %s <source> [output]\n", argv[0])
 		exit(0)
-
 	src_file = s = fopen(argv[1], "r")
 	if !src_file: error("opening source file failed")
 	if argc == 3: dst_file = fopen(argv[2], "w")
 	else: dst_file = stdout
-
 	minilang()
-
 	fclose(src_file)
 	if dst_file != stdin: fclose(dst_file)
-
 	return 0
 
