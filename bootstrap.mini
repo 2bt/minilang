@@ -1,0 +1,49 @@
+var	src_file
+var dst_file
+
+var line_number
+var cursor_pos
+
+var character
+
+error(msg, a1, a2, a3, a4):
+	fprintf(stderr, "%d:%d: error: ", line_number, cursor_pos)
+	fprintf(stderr, msg, a1, a2, a3, a4)
+	fprintf(stderr, "\n")
+	exit(1)
+
+
+output(msg, a1, a2, a3, a4):
+	fprintf(dst_file, msg, a1, a2, a3, a4)
+
+
+read_char():
+	var c
+	c = character
+	character = fgetc(src_file)
+	cursor_pos = cursor_pos + 1
+	if character == '\n':
+		line_number = line_number + 1
+		cursor_pos = 0
+	return c
+
+
+
+minilang():
+
+
+main(argc, argv):
+
+	if argc < 2 | argc > 3:
+		printf("usuage: %s <source> [output]\n", argv[0])
+		exit(0)
+
+	src_file = fopen(argv[1], "r")
+	if !src_file: error("opening source file failed")
+	if argc == 3: dst_file = fopen(argv[2], "w")
+	else: dst_file = stdout
+
+	minilang()
+
+	return 0
+
