@@ -1,4 +1,3 @@
 # minilang
 
-Inspired by [BASICO](http://www.andreadrian.de/tbng/index.html), I'm trying to implement a compiler for my own little programming language.
-Once it's done, it should be powerful enough to bootstrap. We shall see...
+Inspired by [BASICO](http://www.andreadrian.de/tbng/index.html), minilang is a little programming language. It is bootstrapped.
