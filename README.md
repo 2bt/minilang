@@ -17,7 +17,7 @@ Compile the throwaway compiler:
 Bootstrap thus:
 
 	$ ./minilang minilang.mini minilang.s		# compile with throwaway compiler
-	gcc minilang.s -o minilang_jr				# GCC assembles the executable
-	./minilang_jr minilang.mini minilang_jr.s	# compile with bootstrapped compiler
-	diff minilang.s minilang_jr.s				# compare output -> equal
+	$ gcc minilang.s -o minilang_jr				# GCC assembles the executable
+	$ ./minilang_jr minilang.mini minilang_jr.s	# compile with bootstrapped compiler
+	$ diff minilang.s minilang_jr.s				# compare output -> equal
 
