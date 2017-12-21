@@ -295,7 +295,7 @@ expr_0():
 				i = i - 1
 				output("\tpop %s\n", callregs[i])
 			output("\txor rax, rax\n")
-			output("\tcall %s\n", name)
+			output("\tcall %s@PLT\n", name)
 
 			# return value in rax
 			init_cache()
@@ -311,12 +311,12 @@ expr_0():
 		elif lexeme == '=': # assignment
 			read_lexeme()
 			expression()
-			if v < 0: output("\tmov %s, %s\n", name, regname(0))
+			if v < 0: output("\tmov %s[rip], %s\n", name, regname(0))
 			else: output("\tmov QWORD PTR [rbp - %d], %s\n",
 					local_offsets[v], regname(0))
 		else:
 			push()
-			if v < 0: output("\tmov %s, %s\n", regname(0), name)
+			if v < 0: output("\tmov %s, %s[rip]\n", regname(0), name)
 			else: output("\tmov %s, QWORD PTR [rbp - %d]\n",
 					regname(0), local_offsets[v])
 		free(name)
@@ -327,7 +327,7 @@ expr_0():
 		output("LC%d:\n", label)
 		output("\t.string %s\n", token)
 		output("\t.text\n")
-		output("\tmov %s, OFFSET LC%d\n", regname(0), label)
+		output("\tlea %s, LC%d[rip]\n", regname(0), label)
 		label = label + 1
 		read_lexeme()
 	else: error("bad expression")

@@ -423,7 +423,7 @@ void expr_level_zero() {
 
 			// call
 			output("\txor rax, rax\n");
-			output("\tcall %s\n", name);
+			output("\tcall %s@PLT\n", name);
 
 			init_cache();
 			push();
@@ -438,14 +438,14 @@ void expr_level_zero() {
 			read_lexeme();
 			expression();
 			if(!v)
-				output("\tmov %s, %s\n", name, regname(0));
+				output("\tmov %s[rip], %s\n", name, regname(0));
 			else
 				output("\tmov QWORD PTR [rbp - %d], %s\n", v->offset, regname(0));
 		}
 		else {
 			push();
 			if(!v)
-				output("\tmov %s, %s\n", regname(0), name);
+				output("\tmov %s, %s[rip]\n", regname(0), name);
 			else
 				output("\tmov %s, QWORD PTR [rbp - %d]\n", regname(0), v->offset);
 		}
@@ -460,7 +460,7 @@ void expr_level_zero() {
 		output("LC%d:\n", label);
 		output("\t.string %s\n", token);
 		output("\t.text\n");
-		output("\tmov %s, OFFSET LC%d\n", regname(0), label);
+		output("\tlea %s, LC%d[rip]\n", regname(0), label);
 		label++;
 		read_lexeme();
 	}
